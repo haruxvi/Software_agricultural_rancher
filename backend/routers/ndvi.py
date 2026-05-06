@@ -8,6 +8,10 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 from backend.schemas import (
+    AnomalyMetaResponse,
+    AnomalyRequest,
+    AnomalyResponse,
+    AnomalyStatsSchema,
     ComputeRequest,
     ComputeResponse,
     DownloadRequest,
@@ -17,8 +21,9 @@ from backend.schemas import (
     TimeseriesPoint,
     TimeseriesResponse,
 )
+from backend.services.anomaly import compute_anomaly
 from backend.services.ndvi import compute_ndvi
-from backend.services.render import ndvi_to_png
+from backend.services.render import ndvi_to_png, zscore_to_png
 from backend.services.sentinel import download_sentinel2
 from backend.services.timeseries import read_timeseries
 
@@ -29,6 +34,7 @@ DATA_DIR = Path("data")
 PREDIOS_DIR = DATA_DIR / "predios"
 RAW_DIR = DATA_DIR / "raw"
 NDVI_DIR = DATA_DIR / "ndvi"
+ANOMALY_DIR = DATA_DIR / "anomaly"
 
 _MONTH_ES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun",
              "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -211,4 +217,109 @@ def get_timeseries(predio_id: str) -> TimeseriesResponse:
         predio_id=predio_id,
         points=schema_points,
         count=len(schema_points),
+    )
+
+
+# ── Anomalías ────────────────────────────────────────────────────────────────
+
+def _zscore_path(predio_id: str, date_from: date, date_to: date) -> Path:
+    path = ANOMALY_DIR / predio_id / f"{date_from}_{date_to}_zscore.tif"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Z-score no encontrado para '{predio_id}' "
+                f"({date_from} → {date_to}). Ejecuta /anomaly primero."
+            ),
+        )
+    return path
+
+
+@router.post("/predios/{predio_id}/anomaly", response_model=AnomalyResponse)
+def detect_anomaly(predio_id: str, body: AnomalyRequest) -> AnomalyResponse:
+    """Calcula el z-score NDVI del mes indicado frente al resto de la serie temporal."""
+    output_path = ANOMALY_DIR / predio_id / f"{body.date_from}_{body.date_to}_zscore.tif"
+
+    try:
+        zscore_path, stats = compute_anomaly(
+            predio_ndvi_dir=NDVI_DIR / predio_id,
+            target_date_from=body.date_from,
+            target_date_to=body.date_to,
+            output_path=output_path,
+            threshold=body.threshold,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    def _or_none(v: float) -> float | None:
+        return None if (v != v) else v
+
+    return AnomalyResponse(
+        predio_id=predio_id,
+        date_from=body.date_from,
+        date_to=body.date_to,
+        threshold=body.threshold,
+        zscore_path=str(zscore_path),
+        stats=AnomalyStatsSchema(
+            z_mean=_or_none(stats.z_mean),
+            z_std=_or_none(stats.z_std),
+            pct_stress=_or_none(stats.pct_stress),
+            pct_normal=_or_none(stats.pct_normal),
+            pct_above=_or_none(stats.pct_above),
+            baseline_months=stats.baseline_months,
+        ),
+    )
+
+
+@router.get("/predios/{predio_id}/anomaly/image")
+def get_anomaly_image(
+    predio_id: str,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+) -> Response:
+    """Devuelve el mapa de z-score como PNG RGBA (RdBu) para imageOverlay en Leaflet."""
+    zpath = _zscore_path(predio_id, date_from, date_to)
+    try:
+        png_bytes, _ = zscore_to_png(zpath)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(content=png_bytes, media_type="image/png")
+
+
+@router.get("/predios/{predio_id}/anomaly/meta", response_model=AnomalyMetaResponse)
+def get_anomaly_meta(
+    predio_id: str,
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+) -> AnomalyMetaResponse:
+    """Devuelve bounds y estadísticas del z-score calculado."""
+    zpath = _zscore_path(predio_id, date_from, date_to)
+
+    with rasterio.open(zpath) as ds:
+        b = ds.bounds
+        tags = ds.tags()
+
+    def _tf(key: str) -> float | None:
+        try:
+            v = float(tags[key])
+            return None if (v != v) else v
+        except (KeyError, ValueError):
+            return None
+
+    return AnomalyMetaResponse(
+        predio_id=predio_id,
+        date_from=date_from,
+        date_to=date_to,
+        threshold=float(tags.get("threshold", 2.0)),
+        bounds_leaflet=[[b.bottom, b.left], [b.top, b.right]],
+        stats=AnomalyStatsSchema(
+            z_mean=_tf("z_mean"),
+            z_std=_tf("z_std"),
+            pct_stress=_tf("pct_stress"),
+            pct_normal=_tf("pct_normal"),
+            pct_above=_tf("pct_above"),
+            baseline_months=int(tags.get("baseline_months", 0)),
+        ),
     )

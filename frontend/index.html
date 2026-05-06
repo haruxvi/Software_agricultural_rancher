@@ -117,6 +117,62 @@
         <div id="ndvi-interp" class="mt-3 p-2 rounded text-xs hidden"></div>
       </div>
 
+      <!-- Anomalías -->
+      <div class="p-4 border-b border-gray-700">
+        <p class="text-xs text-gray-400 uppercase tracking-wider mb-3">Detección de Anomalías</p>
+
+        <label class="block text-xs text-gray-300 mb-1">Mes a evaluar</label>
+        <div class="flex gap-2 mb-3">
+          <input id="an-date-from" type="date" value="2026-01-01"
+            class="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white
+                   focus:outline-none focus:border-orange-500" />
+          <input id="an-date-to" type="date" value="2026-01-31"
+            class="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs text-white
+                   focus:outline-none focus:border-orange-500" />
+        </div>
+
+        <label class="text-xs text-gray-300">
+          Umbral z-score: <span id="threshold-value" class="text-orange-400 font-mono">±2.0</span>
+        </label>
+        <input id="threshold-slider" type="range" min="1" max="3" step="0.5" value="2"
+          oninput="document.getElementById('threshold-value').textContent = '±' + this.value"
+          class="w-full mt-1 mb-3 accent-orange-500" />
+
+        <button id="btn-anomaly" onclick="loadAnomaly()"
+          class="w-full bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white text-sm
+                 font-medium py-2 rounded transition-colors flex items-center justify-center gap-2">
+          <span id="an-btn-icon">&#9650;</span>
+          <span id="an-btn-label">Detectar Anomalías</span>
+        </button>
+
+        <div id="an-error" class="hidden mt-2 p-2 bg-red-900/50 border border-red-700 rounded text-xs text-red-300"></div>
+
+        <!-- Resultado anomalías -->
+        <div id="anomaly-result" class="hidden mt-3 space-y-2">
+          <div class="grid grid-cols-3 gap-1">
+            <div class="bg-red-900/40 border border-red-800 rounded p-2 text-center">
+              <p class="text-xs text-red-300">Estrés</p>
+              <p id="an-stress" class="font-mono font-bold text-red-400 text-sm">—</p>
+            </div>
+            <div class="bg-gray-700/60 border border-gray-600 rounded p-2 text-center">
+              <p class="text-xs text-gray-300">Normal</p>
+              <p id="an-normal" class="font-mono font-bold text-gray-200 text-sm">—</p>
+            </div>
+            <div class="bg-blue-900/40 border border-blue-800 rounded p-2 text-center">
+              <p class="text-xs text-blue-300">Sobre</p>
+              <p id="an-above" class="font-mono font-bold text-blue-400 text-sm">—</p>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 text-center" id="an-baseline"></p>
+          <button onclick="toggleAnomalyOverlay()"
+            id="btn-toggle-anomaly"
+            class="w-full text-xs border border-gray-600 hover:border-orange-500 text-gray-300
+                   hover:text-orange-400 py-1.5 rounded transition-colors">
+            Mostrar / ocultar mapa de anomalías
+          </button>
+        </div>
+      </div>
+
       <!-- Leyenda -->
       <div class="p-4">
         <p class="text-xs text-gray-400 uppercase tracking-wider mb-2">Leyenda NDVI</p>
@@ -131,6 +187,19 @@
           <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-sm bg-[#a6d96a] inline-block"></span><span class="text-gray-300">0.3–0.6 Moderada</span></div>
           <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-sm bg-[#fee08b] inline-block"></span><span class="text-gray-300">0–0.3 Suelo / escasa</span></div>
           <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-sm bg-[#a50026] inline-block"></span><span class="text-gray-300">&lt; 0 Agua / nubes</span></div>
+        </div>
+
+        <p class="text-xs text-gray-400 uppercase tracking-wider mb-2 mt-4">Leyenda Anomalía</p>
+        <div class="rounded overflow-hidden">
+          <div class="h-3 w-full" style="background:linear-gradient(to right,#b2182b,#ef8a62,#fddbc7,#f7f7f7,#d1e5f0,#67a9cf,#2166ac);"></div>
+          <div class="flex justify-between text-xs text-gray-400 mt-1">
+            <span>-3</span><span>0</span><span>+3</span>
+          </div>
+        </div>
+        <div class="mt-1 flex justify-between text-xs">
+          <span class="text-red-400">Estrés</span>
+          <span class="text-gray-400">Normal</span>
+          <span class="text-blue-400">Sobre normal</span>
         </div>
       </div>
 
@@ -429,6 +498,92 @@
     function updateOpacity(value) {
       document.getElementById('opacity-value').textContent = value + '%';
       if (ndviOverlay) ndviOverlay.setOpacity(value / 100);
+    }
+
+    // ── Anomalías ────────────────────────────────────────────────────────────────
+
+    let anomalyOverlay = null;
+    let lastAnomalyParams = null;
+
+    async function loadAnomaly() {
+      const dateFrom  = document.getElementById('an-date-from').value;
+      const dateTo    = document.getElementById('an-date-to').value;
+      const threshold = document.getElementById('threshold-slider').value;
+
+      if (!dateFrom || !dateTo) { showAnError('Selecciona fechas.'); return; }
+      if (dateFrom > dateTo)    { showAnError('Fecha inicio debe ser anterior a la fecha fin.'); return; }
+
+      setAnLoading(true);
+      clearAnError();
+
+      try {
+        // 1. Calcular z-score en backend
+        const postRes = await fetch(`/ndvi/predios/${PREDIO_ID}/anomaly`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date_from: dateFrom, date_to: dateTo, threshold: parseFloat(threshold) }),
+        });
+        if (!postRes.ok) { const e = await postRes.json(); throw new Error(e.detail || `Error ${postRes.status}`); }
+        const result = await postRes.json();
+
+        // 2. Mostrar resultados
+        const s = result.stats;
+        const fmt1 = v => (v == null ? '—' : v.toFixed(1) + '%');
+        document.getElementById('an-stress').textContent = fmt1(s.pct_stress);
+        document.getElementById('an-normal').textContent = fmt1(s.pct_normal);
+        document.getElementById('an-above').textContent  = fmt1(s.pct_above);
+        document.getElementById('an-baseline').textContent =
+          `Baseline: ${s.baseline_months} mes${s.baseline_months !== 1 ? 'es' : ''} | umbral z=±${threshold}`;
+        document.getElementById('anomaly-result').classList.remove('hidden');
+
+        // 3. Cargar overlay inmediatamente
+        lastAnomalyParams = { dateFrom, dateTo };
+        await _showAnomalyOverlay(dateFrom, dateTo);
+
+      } catch (err) {
+        showAnError(err.message);
+      } finally {
+        setAnLoading(false);
+      }
+    }
+
+    async function _showAnomalyOverlay(dateFrom, dateTo) {
+      const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+      const metaRes = await fetch(`/ndvi/predios/${PREDIO_ID}/anomaly/meta?${params}`);
+      if (!metaRes.ok) return;
+      const meta = await metaRes.json();
+
+      const imageUrl = `/ndvi/predios/${PREDIO_ID}/anomaly/image?${params}&_t=${Date.now()}`;
+      if (anomalyOverlay) map.removeLayer(anomalyOverlay);
+      anomalyOverlay = L.imageOverlay(imageUrl, meta.bounds_leaflet, {
+        opacity: 0.75, interactive: false,
+      }).addTo(map);
+    }
+
+    function toggleAnomalyOverlay() {
+      if (!anomalyOverlay) return;
+      if (map.hasLayer(anomalyOverlay)) {
+        map.removeLayer(anomalyOverlay);
+      } else {
+        anomalyOverlay.addTo(map);
+      }
+    }
+
+    function setAnLoading(on) {
+      const btn = document.getElementById('btn-anomaly');
+      document.getElementById('an-btn-icon').textContent  = on ? '⟳' : '▲';
+      document.getElementById('an-btn-label').textContent = on ? 'Calculando...' : 'Detectar Anomalías';
+      btn.disabled = on;
+      btn.classList.toggle('opacity-60', on);
+      btn.classList.toggle('cursor-not-allowed', on);
+    }
+
+    function showAnError(msg) {
+      const el = document.getElementById('an-error');
+      el.textContent = msg; el.classList.remove('hidden');
+    }
+    function clearAnError() {
+      document.getElementById('an-error').classList.add('hidden');
     }
 
     // ── Boot ────────────────────────────────────────────────────────────────────

@@ -50,6 +50,39 @@ class NDVIMetaResponse(BaseModel):
     stats: NDVIStatsSchema
 
 
+class AnomalyRequest(BaseModel):
+    date_from: date = Field(..., description="Inicio del mes a evaluar")
+    date_to: date = Field(..., description="Fin del mes a evaluar")
+    threshold: float = Field(2.0, ge=0.5, le=4.0, description="Umbral z-score para anomalía")
+
+
+class AnomalyStatsSchema(BaseModel):
+    z_mean: float | None
+    z_std: float | None
+    pct_stress: float | None = Field(None, description="% píxeles con z < −threshold")
+    pct_normal: float | None = Field(None, description="% píxeles dentro de ±threshold")
+    pct_above: float | None = Field(None, description="% píxeles con z > +threshold")
+    baseline_months: int
+
+
+class AnomalyResponse(BaseModel):
+    predio_id: str
+    date_from: date
+    date_to: date
+    threshold: float
+    zscore_path: str
+    stats: AnomalyStatsSchema
+
+
+class AnomalyMetaResponse(BaseModel):
+    predio_id: str
+    date_from: date
+    date_to: date
+    threshold: float
+    bounds_leaflet: list[list[float]]
+    stats: AnomalyStatsSchema
+
+
 class TimeseriesPoint(BaseModel):
     date_from: date
     date_to: date
