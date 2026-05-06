@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
-from backend.routers import ndvi
+from backend.routers import ndvi, report
 
 logging.basicConfig(
     level=settings.log_level,
@@ -29,6 +29,7 @@ app.add_middleware(
 
 
 app.include_router(ndvi.router)
+app.include_router(report.router)
 
 
 @app.get("/health")

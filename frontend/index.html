@@ -77,6 +77,18 @@
         </button>
 
         <div id="error-msg" class="hidden mt-3 p-2 bg-red-900/50 border border-red-700 rounded text-xs text-red-300"></div>
+
+        <!-- Descargar PDF -->
+        <button onclick="downloadPDF()"
+          class="w-full mt-3 border border-gray-600 hover:border-green-500 text-gray-300
+                 hover:text-green-400 text-sm py-2 rounded transition-colors flex items-center
+                 justify-center gap-2">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a1 1 0 001 1h16a1 1 0 001-1v-3"/>
+          </svg>
+          Descargar Informe PDF
+        </button>
       </div>
 
       <!-- Opacidad -->
@@ -498,6 +510,16 @@
     function updateOpacity(value) {
       document.getElementById('opacity-value').textContent = value + '%';
       if (ndviOverlay) ndviOverlay.setOpacity(value / 100);
+    }
+
+    // ── PDF ──────────────────────────────────────────────────────────────────────
+
+    function downloadPDF() {
+      const dateFrom = document.getElementById('date-from').value;
+      const dateTo   = document.getElementById('date-to').value;
+      if (!dateFrom || !dateTo) { showError('Selecciona fechas antes de descargar el informe.'); return; }
+      const url = `/report/predios/${PREDIO_ID}/pdf?date_from=${dateFrom}&date_to=${dateTo}`;
+      window.open(url, '_blank');
     }
 
     // ── Anomalías ────────────────────────────────────────────────────────────────
