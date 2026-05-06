@@ -1,0 +1,37 @@
+# Web
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+
+# Geoespacial
+rasterio==1.4.3
+geopandas==1.0.1
+shapely==2.1.0
+
+# Sentinel-2
+sentinelhub==3.10.5
+
+# Base de datos
+sqlalchemy==2.0.40
+geoalchemy2==0.17.1
+psycopg2-binary==2.9.10
+alembic==1.15.2
+
+# Validación y config
+pydantic==2.11.4
+pydantic-settings==2.9.1
+python-dotenv==1.1.0
+
+# HTTP
+httpx==0.28.1
+
+# PDF
+weasyprint==65.1
+
+# Auth
+python-jose[cryptography]==3.5.0
+supabase==2.15.2
+
+# Dev / Test
+pytest==8.3.5
+pytest-asyncio==0.26.0
+ruff==0.11.9

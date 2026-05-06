@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgroVista — Monitor de Predios</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    #map { height: calc(100vh - 64px); }
+  </style>
+</head>
+<body class="bg-gray-900 text-white">
+
+  <!-- Navbar -->
+  <nav class="h-16 bg-gray-800 flex items-center px-6 shadow">
+    <span class="text-green-400 font-bold text-xl tracking-tight">AgroVista</span>
+    <span class="ml-3 text-gray-400 text-sm">Monitor Satelital MVP</span>
+  </nav>
+
+  <!-- Mapa -->
+  <div id="map"></div>
+
+  <script>
+    const API = 'http://localhost:8000';
+
+    const map = L.map('map').setView([-34.646, -71.3725], 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+    }).addTo(map);
+
+    // Cargar predio de prueba
+    fetch('/data/predios/predio_prueba.geojson')
+      .then(r => r.json())
+      .then(geojson => {
+        L.geoJSON(geojson, {
+          style: { color: '#4ade80', weight: 2, fillOpacity: 0.15 },
+          onEachFeature: (feature, layer) => {
+            const p = feature.properties;
+            layer.bindPopup(`
+              <strong>${p.nombre}</strong><br>
+              ${p.hectareas} ha · ${p.cultivo}<br>
+              ${p.comuna}, Región ${p.region}
+            `);
+          },
+        }).addTo(map);
+      })
+      .catch(() => console.warn('GeoJSON no disponible en dev estático'));
+  </script>
+</body>
+</html>

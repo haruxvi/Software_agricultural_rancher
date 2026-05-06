@@ -1,0 +1,51 @@
+# Entorno Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Credenciales y config local
+.env
+.env.local
+*.pem
+*.key
+
+# Base de datos local
+*.db
+*.sqlite
+
+# Datos satelitales descargados
+data/raw/
+data/cache/
+*.tif
+*.jp2
+*.geotiff
+
+# WeasyPrint / PDFs generados
+reports/*.pdf
+
+# Rasterio / GDAL
+*.aux.xml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Alembic
+# (mantener alembic/versions en git)
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Ruff
+.ruff_cache/

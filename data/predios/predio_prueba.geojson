@@ -1,0 +1,28 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "predio-001",
+        "nombre": "Viña Prueba Colchagua",
+        "region": "VI",
+        "comuna": "Santa Cruz",
+        "hectareas": 45.2,
+        "cultivo": "vid"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-71.3800, -34.6400],
+            [-71.3650, -34.6400],
+            [-71.3650, -34.6520],
+            [-71.3800, -34.6520],
+            [-71.3800, -34.6400]
+          ]
+        ]
+      }
+    }
+  ]
+}
