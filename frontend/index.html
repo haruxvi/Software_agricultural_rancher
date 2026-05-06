@@ -3,51 +3,438 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AgroVista — Monitor de Predios</title>
+  <title>AgroVista</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
-    #map { height: calc(100vh - 64px); }
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; }
+    .leaflet-container { background: #1f2937; }
+    #chart-panel {
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+    #chart-panel.hidden-panel {
+      transform: translateY(100%);
+      opacity: 0;
+      pointer-events: none;
+    }
   </style>
 </head>
-<body class="bg-gray-900 text-white">
+<body class="bg-gray-900 text-white flex flex-col h-screen overflow-hidden">
 
   <!-- Navbar -->
-  <nav class="h-16 bg-gray-800 flex items-center px-6 shadow">
-    <span class="text-green-400 font-bold text-xl tracking-tight">AgroVista</span>
-    <span class="ml-3 text-gray-400 text-sm">Monitor Satelital MVP</span>
+  <nav class="h-12 bg-gray-800 border-b border-gray-700 flex items-center px-4 shrink-0 z-10 gap-3">
+    <span class="text-green-400 font-bold tracking-tight">AgroVista</span>
+    <span class="text-gray-600">|</span>
+    <span class="text-gray-500 text-xs">Monitor Satelital MVP</span>
+    <div class="ml-auto flex items-center gap-4">
+      <button onclick="toggleChart()"
+        class="text-xs text-gray-300 hover:text-green-400 flex items-center gap-1.5 transition-colors">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
+        Serie Temporal
+      </button>
+      <div class="flex items-center gap-2">
+        <span id="status-dot" class="w-2 h-2 rounded-full bg-gray-600"></span>
+        <span id="status-text" class="text-xs text-gray-500">Conectando...</span>
+      </div>
+    </div>
   </nav>
 
-  <!-- Mapa -->
-  <div id="map"></div>
+  <!-- Main layout -->
+  <div class="flex flex-1 overflow-hidden relative">
+
+    <!-- Sidebar -->
+    <aside class="w-72 bg-gray-800 border-r border-gray-700 flex flex-col overflow-y-auto shrink-0 z-10">
+
+      <!-- Predio info -->
+      <div class="p-4 border-b border-gray-700">
+        <p class="text-xs text-gray-400 uppercase tracking-wider mb-1">Predio activo</p>
+        <p id="predio-nombre" class="font-semibold text-white">Cargando...</p>
+        <p id="predio-detalle" class="text-xs text-gray-400 mt-0.5"></p>
+      </div>
+
+      <!-- Controles NDVI -->
+      <div class="p-4 border-b border-gray-700">
+        <p class="text-xs text-gray-400 uppercase tracking-wider mb-3">Imagen NDVI</p>
+
+        <label class="block text-xs text-gray-300 mb-1">Desde</label>
+        <input id="date-from" type="date" value="2026-03-01"
+          class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm text-white
+                 focus:outline-none focus:border-green-500 mb-3" />
+
+        <label class="block text-xs text-gray-300 mb-1">Hasta</label>
+        <input id="date-to" type="date" value="2026-03-31"
+          class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm text-white
+                 focus:outline-none focus:border-green-500 mb-4" />
+
+        <button id="btn-load" onclick="loadNDVI()"
+          class="w-full bg-green-600 hover:bg-green-500 active:bg-green-700 text-white text-sm
+                 font-medium py-2 rounded transition-colors flex items-center justify-center gap-2">
+          <span id="btn-icon">&#9654;</span>
+          <span id="btn-label">Cargar NDVI</span>
+        </button>
+
+        <div id="error-msg" class="hidden mt-3 p-2 bg-red-900/50 border border-red-700 rounded text-xs text-red-300"></div>
+      </div>
+
+      <!-- Opacidad -->
+      <div class="p-4 border-b border-gray-700">
+        <label class="text-xs text-gray-400 uppercase tracking-wider">
+          Opacidad overlay <span id="opacity-value" class="text-green-400 ml-1">80%</span>
+        </label>
+        <input id="opacity-slider" type="range" min="0" max="100" value="80"
+          oninput="updateOpacity(this.value)"
+          class="w-full mt-2 accent-green-500" />
+      </div>
+
+      <!-- Stats NDVI -->
+      <div id="stats-panel" class="p-4 border-b border-gray-700 hidden">
+        <p class="text-xs text-gray-400 uppercase tracking-wider mb-3">Estadísticas NDVI</p>
+        <div class="space-y-2">
+          <div class="flex justify-between text-sm">
+            <span class="text-gray-400">Promedio</span>
+            <span id="stat-mean" class="font-mono font-semibold text-white">—</span>
+          </div>
+          <div class="flex justify-between text-sm">
+            <span class="text-gray-400">Mínimo</span>
+            <span id="stat-min" class="font-mono text-red-400">—</span>
+          </div>
+          <div class="flex justify-between text-sm">
+            <span class="text-gray-400">Máximo</span>
+            <span id="stat-max" class="font-mono text-green-400">—</span>
+          </div>
+          <div class="flex justify-between text-sm">
+            <span class="text-gray-400">Desvío est.</span>
+            <span id="stat-std" class="font-mono text-gray-300">—</span>
+          </div>
+          <div class="flex justify-between text-sm">
+            <span class="text-gray-400">Píxeles válidos</span>
+            <span id="stat-valid" class="font-mono text-gray-300">—</span>
+          </div>
+        </div>
+        <div id="ndvi-interp" class="mt-3 p-2 rounded text-xs hidden"></div>
+      </div>
+
+      <!-- Leyenda -->
+      <div class="p-4">
+        <p class="text-xs text-gray-400 uppercase tracking-wider mb-2">Leyenda NDVI</p>
+        <div class="rounded overflow-hidden">
+          <div class="h-3 w-full" style="background:linear-gradient(to right,#a50026,#d73027,#f46d43,#fdae61,#fee08b,#ffffbf,#d9ef8b,#a6d96a,#66bd63,#1a9850,#006837);"></div>
+          <div class="flex justify-between text-xs text-gray-400 mt-1">
+            <span>-1</span><span>0</span><span>+1</span>
+          </div>
+        </div>
+        <div class="mt-2 space-y-1 text-xs">
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-sm bg-[#006837] inline-block"></span><span class="text-gray-300">≥ 0.6 Vegetación densa</span></div>
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-sm bg-[#a6d96a] inline-block"></span><span class="text-gray-300">0.3–0.6 Moderada</span></div>
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-sm bg-[#fee08b] inline-block"></span><span class="text-gray-300">0–0.3 Suelo / escasa</span></div>
+          <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-sm bg-[#a50026] inline-block"></span><span class="text-gray-300">&lt; 0 Agua / nubes</span></div>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- Área del mapa -->
+    <div class="flex-1 relative">
+      <div id="map" class="absolute inset-0"></div>
+
+      <!-- Panel serie temporal (overlay sobre el mapa) -->
+      <div id="chart-panel"
+        class="hidden-panel absolute bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur border-t border-gray-700"
+        style="height: 230px;">
+
+        <div class="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+          <div class="flex items-center gap-3">
+            <span class="text-sm font-medium text-white">Serie Temporal NDVI — 12 meses</span>
+            <span id="ts-count" class="text-xs text-gray-400"></span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span id="ts-status" class="text-xs text-gray-500"></span>
+            <button onclick="toggleChart()" class="text-gray-400 hover:text-white transition-colors text-lg leading-none">&times;</button>
+          </div>
+        </div>
+
+        <div class="px-4 py-2" style="height: 178px;">
+          <canvas id="ts-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+  </div>
 
   <script>
-    const API = 'http://localhost:8000';
+    const PREDIO_ID = 'predio_prueba';
+    let map, predioLayer, ndviOverlay, tsChart, chartVisible = false;
 
-    const map = L.map('map').setView([-34.646, -71.3725], 13);
+    // ── Mapa ────────────────────────────────────────────────────────────────────
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
-    }).addTo(map);
+    function initMap() {
+      map = L.map('map', { zoomControl: true }).setView([-34.646, -71.3725], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors', maxZoom: 19,
+      }).addTo(map);
 
-    // Cargar predio de prueba
-    fetch('/data/predios/predio_prueba.geojson')
-      .then(r => r.json())
-      .then(geojson => {
-        L.geoJSON(geojson, {
-          style: { color: '#4ade80', weight: 2, fillOpacity: 0.15 },
-          onEachFeature: (feature, layer) => {
-            const p = feature.properties;
-            layer.bindPopup(`
-              <strong>${p.nombre}</strong><br>
-              ${p.hectareas} ha · ${p.cultivo}<br>
-              ${p.comuna}, Región ${p.region}
-            `);
-          },
+      fetch(`/data/predios/${PREDIO_ID}.geojson`)
+        .then(r => r.json())
+        .then(geojson => {
+          const p = geojson.features[0].properties;
+          document.getElementById('predio-nombre').textContent = p.nombre;
+          document.getElementById('predio-detalle').textContent =
+            `${p.hectareas} ha · ${p.cultivo} · ${p.comuna}`;
+
+          predioLayer = L.geoJSON(geojson, {
+            style: { color: '#4ade80', weight: 2, fillOpacity: 0.05, dashArray: '4' },
+            onEachFeature: (f, layer) => {
+              const q = f.properties;
+              layer.bindPopup(`<strong>${q.nombre}</strong><br>${q.hectareas} ha · ${q.cultivo}<br>${q.comuna}, Región ${q.region}`);
+            },
+          }).addTo(map);
+          map.fitBounds(predioLayer.getBounds(), { padding: [40, 40] });
+        })
+        .catch(() => { document.getElementById('predio-nombre').textContent = 'predio_prueba'; });
+    }
+
+    // ── Health check ────────────────────────────────────────────────────────────
+
+    async function checkApiHealth() {
+      try {
+        const r = await fetch('/health');
+        const dot = document.getElementById('status-dot');
+        const txt = document.getElementById('status-text');
+        if (r.ok) {
+          dot.className = 'w-2 h-2 rounded-full bg-green-500';
+          txt.textContent = 'API conectada';
+          txt.className = 'text-xs text-green-400';
+        } else throw new Error();
+      } catch {
+        document.getElementById('status-dot').className = 'w-2 h-2 rounded-full bg-red-500';
+        document.getElementById('status-text').textContent = 'API no disponible';
+        document.getElementById('status-text').className = 'text-xs text-red-400';
+      }
+    }
+
+    // ── NDVI overlay ────────────────────────────────────────────────────────────
+
+    async function loadNDVI() {
+      const dateFrom = document.getElementById('date-from').value;
+      const dateTo   = document.getElementById('date-to').value;
+      if (!dateFrom || !dateTo) { showError('Selecciona un rango de fechas.'); return; }
+      if (dateFrom > dateTo)    { showError('La fecha inicio debe ser anterior a la fecha fin.'); return; }
+
+      setLoading(true); clearError();
+
+      try {
+        const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+        const res = await fetch(`/ndvi/predios/${PREDIO_ID}/meta?${params}`);
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail || `Error ${res.status}`); }
+        const meta = await res.json();
+
+        const imageUrl = `/ndvi/predios/${PREDIO_ID}/image?${params}&_t=${Date.now()}`;
+        if (ndviOverlay) map.removeLayer(ndviOverlay);
+        ndviOverlay = L.imageOverlay(imageUrl, meta.bounds_leaflet, {
+          opacity: document.getElementById('opacity-slider').value / 100,
+          interactive: false,
         }).addTo(map);
-      })
-      .catch(() => console.warn('GeoJSON no disponible en dev estático'));
+
+        showStats(meta.stats);
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // ── Serie temporal ──────────────────────────────────────────────────────────
+
+    async function toggleChart() {
+      const panel = document.getElementById('chart-panel');
+      chartVisible = !chartVisible;
+      panel.classList.toggle('hidden-panel', !chartVisible);
+
+      if (chartVisible && !tsChart) {
+        await loadTimeseries();
+      }
+      // Notificar a Leaflet que el contenedor cambió de tamaño
+      setTimeout(() => map.invalidateSize(), 310);
+    }
+
+    async function loadTimeseries() {
+      const statusEl = document.getElementById('ts-status');
+      const countEl  = document.getElementById('ts-count');
+      statusEl.textContent = 'Cargando...';
+
+      try {
+        const res = await fetch(`/ndvi/predios/${PREDIO_ID}/timeseries`);
+        if (!res.ok) throw new Error(`Error ${res.status}`);
+        const data = await res.json();
+
+        if (data.count === 0) {
+          statusEl.textContent = 'Sin datos — ejecuta generate_test_data.py o calcula NDVI primero.';
+          return;
+        }
+
+        statusEl.textContent = '';
+        countEl.textContent = `${data.count} mes${data.count !== 1 ? 'es' : ''}`;
+        renderChart(data.points);
+      } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+      }
+    }
+
+    function renderChart(points) {
+      const labels   = points.map(p => p.label);
+      const means    = points.map(p => p.mean);
+      const maxVals  = points.map(p => p.max);
+      const minVals  = points.map(p => p.min);
+
+      const ctx = document.getElementById('ts-chart').getContext('2d');
+      if (tsChart) tsChart.destroy();
+
+      tsChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Máx',
+              data: maxVals,
+              borderColor: 'transparent',
+              backgroundColor: 'rgba(74,222,128,0.12)',
+              fill: '+1',
+              tension: 0.4,
+              pointRadius: 0,
+            },
+            {
+              label: 'NDVI Promedio',
+              data: means,
+              borderColor: '#4ade80',
+              borderWidth: 2,
+              backgroundColor: 'transparent',
+              fill: false,
+              tension: 0.4,
+              pointRadius: 4,
+              pointBackgroundColor: '#4ade80',
+              pointBorderColor: '#111827',
+              pointBorderWidth: 2,
+              pointHoverRadius: 6,
+            },
+            {
+              label: 'Mín',
+              data: minVals,
+              borderColor: 'transparent',
+              backgroundColor: 'rgba(74,222,128,0.12)',
+              fill: '-2',
+              tension: 0.4,
+              pointRadius: 0,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#1f2937',
+              borderColor: '#374151',
+              borderWidth: 1,
+              titleColor: '#9ca3af',
+              bodyColor: '#f9fafb',
+              callbacks: {
+                label: ctx => {
+                  const v = ctx.parsed.y;
+                  if (ctx.datasetIndex === 1) return ` Promedio: ${v?.toFixed(3) ?? '—'}`;
+                  if (ctx.datasetIndex === 0) return ` Máx: ${v?.toFixed(3) ?? '—'}`;
+                  if (ctx.datasetIndex === 2) return ` Mín: ${v?.toFixed(3) ?? '—'}`;
+                  return '';
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#9ca3af', font: { size: 11 } },
+            },
+            y: {
+              min: 0,
+              max: 1,
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: {
+                color: '#9ca3af',
+                font: { size: 11 },
+                stepSize: 0.2,
+                callback: v => v.toFixed(1),
+              },
+            },
+          },
+        },
+      });
+    }
+
+    // ── UI helpers ──────────────────────────────────────────────────────────────
+
+    function setLoading(on) {
+      const btn = document.getElementById('btn-load');
+      document.getElementById('btn-icon').textContent  = on ? '⟳' : '▶';
+      document.getElementById('btn-label').textContent = on ? 'Cargando...' : 'Cargar NDVI';
+      btn.disabled = on;
+      btn.classList.toggle('opacity-60', on);
+      btn.classList.toggle('cursor-not-allowed', on);
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+
+    function clearError() {
+      document.getElementById('error-msg').classList.add('hidden');
+    }
+
+    function showStats(stats) {
+      const fmt = v => (v == null || isNaN(v)) ? '—' : v.toFixed(3);
+      document.getElementById('stat-mean').textContent  = fmt(stats.mean);
+      document.getElementById('stat-min').textContent   = fmt(stats.min);
+      document.getElementById('stat-max').textContent   = fmt(stats.max);
+      document.getElementById('stat-std').textContent   = fmt(stats.std);
+      document.getElementById('stat-valid').textContent =
+        (stats.valid_pixel_pct == null || isNaN(stats.valid_pixel_pct))
+          ? '—' : stats.valid_pixel_pct.toFixed(1) + '%';
+
+      document.getElementById('stats-panel').classList.remove('hidden');
+
+      const interp = document.getElementById('ndvi-interp');
+      const m = stats.mean;
+      if (m != null && !isNaN(m)) {
+        const [text, cls] = m >= 0.6
+          ? ['Vegetación densa — viña en buen estado', 'bg-green-900/40 border border-green-700 text-green-300']
+          : m >= 0.3
+          ? ['Vegetación moderada — revisar sectores', 'bg-yellow-900/40 border border-yellow-700 text-yellow-300']
+          : m >= 0
+          ? ['Vegetación escasa / suelo expuesto', 'bg-orange-900/40 border border-orange-700 text-orange-300']
+          : ['Agua o nubes residuales dominantes', 'bg-red-900/40 border border-red-700 text-red-300'];
+        interp.textContent = text;
+        interp.className = `mt-3 p-2 rounded text-xs ${cls}`;
+        interp.classList.remove('hidden');
+      } else {
+        interp.classList.add('hidden');
+      }
+    }
+
+    function updateOpacity(value) {
+      document.getElementById('opacity-value').textContent = value + '%';
+      if (ndviOverlay) ndviOverlay.setOpacity(value / 100);
+    }
+
+    // ── Boot ────────────────────────────────────────────────────────────────────
+
+    initMap();
+    checkApiHealth();
   </script>
 </body>
 </html>

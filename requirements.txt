@@ -24,12 +24,19 @@ python-dotenv==1.1.0
 # HTTP
 httpx==0.28.1
 
+# Visualización / render
+matplotlib==3.10.3
+Pillow==11.2.1
+
 # PDF
 weasyprint==65.1
 
 # Auth
 python-jose[cryptography]==3.5.0
 supabase==2.15.2
+
+# Static files (necesario para StaticFiles de FastAPI)
+aiofiles==24.1.0
 
 # Dev / Test
 pytest==8.3.5

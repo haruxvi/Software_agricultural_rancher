@@ -2,8 +2,10 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
+from backend.routers import ndvi
 
 logging.basicConfig(
     level=settings.log_level,
@@ -26,6 +28,15 @@ app.add_middleware(
 )
 
 
+app.include_router(ndvi.router)
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "environment": settings.environment}
+
+
+# Archivos estáticos — montar DESPUÉS de todas las rutas API
+# para que el catch-all de "/" no intercepte endpoints.
+app.mount("/data", StaticFiles(directory="data"), name="data")
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
