@@ -1,6 +1,7 @@
 """Descarga de bandas Sentinel-2 vía Copernicus Data Space (sentinelhub-py)."""
 
 import logging
+import time
 from datetime import date
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from rasterio.transform import from_bounds
 
 # Import lazy: sentinelhub es opcional en entornos sin credenciales
 try:
+    from sentinelhub import CRS as SentinelCRS  # type: ignore[import-untyped]
     from sentinelhub import (  # type: ignore[import-untyped]
         BBox,
         DataCollection,
@@ -19,7 +21,6 @@ try:
         SHConfig,
         bbox_to_dimensions,
     )
-    from sentinelhub import CRS as SentinelCRS  # type: ignore[import-untyped]
     _SH_AVAILABLE = True
 except ModuleNotFoundError:
     _SH_AVAILABLE = False
@@ -141,7 +142,25 @@ def download_sentinel2(
         config=config,
     )
 
-    data = request.get_data()
+    _MAX_RETRIES = 3
+    _TIMEOUT_S = 60
+    data = None
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            data = request.get_data(decode_data=True, save_data=False)
+            break
+        except Exception as exc:
+            is_timeout = "timeout" in str(exc).lower() or "timed out" in str(exc).lower()
+            if attempt == _MAX_RETRIES:
+                if is_timeout:
+                    raise RuntimeError(
+                        f"Sentinel Hub no respondió en {_TIMEOUT_S}s tras {_MAX_RETRIES} intentos"
+                    ) from exc
+                raise RuntimeError(f"Error descargando desde Sentinel Hub: {exc}") from exc
+            wait = 2 ** attempt
+            logger.warning("Intento %d/%d fallido (%s). Reintentando en %ds…", attempt, _MAX_RETRIES, exc, wait)
+            time.sleep(wait)
+
     if not data or data[0] is None:
         raise ValueError(
             f"Sin escenas disponibles para bbox={bbox_coords} "
