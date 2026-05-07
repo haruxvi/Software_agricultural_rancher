@@ -8,7 +8,7 @@ import rasterio
 from rasterio.crs import CRS
 from rasterio.transform import from_bounds
 
-from backend.services.ndvi import NDVIStats, compute_ndvi
+from backend.services.ndvi import compute_ndvi
 
 NODATA = -9999.0
 

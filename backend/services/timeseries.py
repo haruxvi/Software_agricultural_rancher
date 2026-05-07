@@ -59,9 +59,9 @@ def read_timeseries(predio_ndvi_dir: Path) -> list[TimeseriesPoint]:
             logger.warning("No se pudo leer %s, se omite.", tif)
             continue
 
-        def _f(key: str) -> float:
+        def _f(key: str, _t: dict = tags) -> float:
             try:
-                return float(tags[key])
+                return float(_t[key])
             except (KeyError, ValueError):
                 return float("nan")
 

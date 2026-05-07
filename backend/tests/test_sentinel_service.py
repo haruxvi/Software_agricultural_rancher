@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 import rasterio
 from rasterio.crs import CRS
-from rasterio.transform import from_bounds
 
 from backend.services.sentinel import download_sentinel2
 
@@ -28,27 +27,29 @@ def test_download_sentinel2_guarda_geotiff(tmp_path: Path) -> None:
     fake_image = _make_fake_image()
 
     with (
-        patch("backend.services.sentinel.SentinelHubRequest") as mock_request,
-        patch("backend.services.sentinel.bbox_to_dimensions", return_value=(20, 20)),
+        patch("backend.services.sentinel._SH_AVAILABLE", True),
+        patch("backend.services.sentinel.SentinelHubRequest", create=True) as mock_request,
+        patch("backend.services.sentinel.bbox_to_dimensions", create=True, return_value=(20, 20)),
+        patch("backend.services.sentinel.BBox", create=True, return_value=MagicMock()),
+        patch("backend.services.sentinel.SentinelCRS", create=True),
+        patch("backend.services.sentinel.SHConfig", create=True, return_value=MagicMock()),
+        patch("backend.services.sentinel.DataCollection", create=True),
+        patch("backend.services.sentinel.MimeType", create=True),
     ):
         instance = MagicMock()
         instance.get_data.return_value = [fake_image]
         mock_request.return_value = instance
 
-        with patch.dict(
-            "os.environ",
-            {"SH_CLIENT_ID": "test-id", "SH_CLIENT_SECRET": "test-secret"},
-        ):
-            with patch("backend.services.sentinel.settings") as mock_settings:
-                mock_settings.sh_client_id = "test-id"
-                mock_settings.sh_client_secret = "test-secret"
+        with patch("backend.services.sentinel.settings") as mock_settings:
+            mock_settings.sh_client_id = "test-id"
+            mock_settings.sh_client_secret = "test-secret"
 
-                result = download_sentinel2(
-                    bbox_coords=bbox,
-                    date_from=date(2026, 3, 1),
-                    date_to=date(2026, 3, 31),
-                    output_path=output,
-                )
+            result = download_sentinel2(
+                bbox_coords=bbox,
+                date_from=date(2026, 3, 1),
+                date_to=date(2026, 3, 31),
+                output_path=output,
+            )
 
     assert result == output
     assert output.exists()
@@ -63,7 +64,10 @@ def test_download_sentinel2_guarda_geotiff(tmp_path: Path) -> None:
 
 def test_download_sentinel2_falla_sin_credenciales(tmp_path: Path) -> None:
     """Sin credenciales configuradas debe lanzar RuntimeError."""
-    with patch("backend.services.sentinel.settings") as mock_settings:
+    with (
+        patch("backend.services.sentinel._SH_AVAILABLE", True),
+        patch("backend.services.sentinel.settings") as mock_settings,
+    ):
         mock_settings.sh_client_id = ""
         mock_settings.sh_client_secret = ""
 
@@ -79,8 +83,14 @@ def test_download_sentinel2_falla_sin_credenciales(tmp_path: Path) -> None:
 def test_download_sentinel2_falla_sin_escenas(tmp_path: Path) -> None:
     """Si la API devuelve lista vacía debe lanzar ValueError."""
     with (
-        patch("backend.services.sentinel.SentinelHubRequest") as mock_request,
-        patch("backend.services.sentinel.bbox_to_dimensions", return_value=(20, 20)),
+        patch("backend.services.sentinel._SH_AVAILABLE", True),
+        patch("backend.services.sentinel.SentinelHubRequest", create=True) as mock_request,
+        patch("backend.services.sentinel.bbox_to_dimensions", create=True, return_value=(20, 20)),
+        patch("backend.services.sentinel.BBox", create=True, return_value=MagicMock()),
+        patch("backend.services.sentinel.SentinelCRS", create=True),
+        patch("backend.services.sentinel.SHConfig", create=True, return_value=MagicMock()),
+        patch("backend.services.sentinel.DataCollection", create=True),
+        patch("backend.services.sentinel.MimeType", create=True),
         patch("backend.services.sentinel.settings") as mock_settings,
     ):
         mock_settings.sh_client_id = "test-id"

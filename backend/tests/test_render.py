@@ -96,9 +96,11 @@ def test_vegetacion_mas_verde_que_suelo(tmp_path: Path) -> None:
     img = Image.open(io.BytesIO(png_bytes))
     pixels = np.array(img)  # shape (1, 2, 4) — RGBA
 
-    green_vegetacion = int(pixels[0, 0, 1])
-    green_suelo = int(pixels[0, 1, 1])
-    assert green_vegetacion > green_suelo
+    # RdYlGn: vegetación (NDVI alto) → verde oscuro, suelo (NDVI bajo) → amarillo.
+    # El canal verde del amarillo es alto, así que comparamos G-R (verde puro vs amarillo/rojo).
+    gminusr_veg  = int(pixels[0, 0, 1]) - int(pixels[0, 0, 0])
+    gminusr_soil = int(pixels[0, 1, 1]) - int(pixels[0, 1, 0])
+    assert gminusr_veg > gminusr_soil
 
 
 def test_archivo_no_existe(tmp_path: Path) -> None:

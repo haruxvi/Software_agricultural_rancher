@@ -10,7 +10,7 @@ import rasterio
 from rasterio.crs import CRS
 from rasterio.transform import from_bounds
 
-from backend.services.report import build_report, generate_pdf
+from backend.services.report import build_report
 
 BBOX = (-71.38, -34.652, -71.365, -34.64)
 NODATA = -9999.0
