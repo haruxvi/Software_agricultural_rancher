@@ -88,6 +88,21 @@ async def download_predio(predio_id: str = Depends(get_user_predio), body: Downl
     bbox = _load_predio_bbox(predio_id)
     output_path = RAW_DIR / predio_id / f"{body.date_from}_{body.date_to}_B04B08.tif"
 
+    def _get_dims(p: Path) -> tuple[int, int]:
+        with rasterio.open(p) as ds:
+            return ds.width, ds.height
+
+    if output_path.exists():
+        width, height = await asyncio.to_thread(_get_dims, output_path)
+        return DownloadResponse(
+            predio_id=predio_id,
+            date_from=body.date_from,
+            date_to=body.date_to,
+            width_px=width,
+            height_px=height,
+            resolution_m=body.resolution,
+        )
+
     try:
         path = await asyncio.to_thread(
             download_sentinel2,
@@ -102,10 +117,6 @@ async def download_predio(predio_id: str = Depends(get_user_predio), body: Downl
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    def _get_dims(p: Path) -> tuple[int, int]:
-        with rasterio.open(p) as ds:
-            return ds.width, ds.height
 
     width, height = await asyncio.to_thread(_get_dims, path)
 
@@ -133,6 +144,27 @@ async def compute_predio_ndvi(predio_id: str = Depends(get_user_predio), body: C
         )
 
     output_path = NDVI_DIR / predio_id / f"{body.date_from}_{body.date_to}_NDVI.tif"
+
+    if output_path.exists():
+        def _read_cached_stats(p: Path) -> NDVIStatsSchema:
+            with rasterio.open(p) as ds:
+                t = ds.tags()
+            def _f(k: str) -> float:
+                try:
+                    return float(t[k])
+                except (KeyError, ValueError):
+                    return float("nan")
+            return NDVIStatsSchema(
+                mean=_f("ndvi_mean"), min=_f("ndvi_min"), max=_f("ndvi_max"),
+                std=_f("ndvi_std"), valid_pixel_pct=_f("ndvi_valid_pixel_pct"),
+            )
+        cached = await asyncio.to_thread(_read_cached_stats, output_path)
+        return ComputeResponse(
+            predio_id=predio_id,
+            date_from=body.date_from,
+            date_to=body.date_to,
+            stats=cached,
+        )
 
     try:
         ndvi_path, stats = await asyncio.to_thread(compute_ndvi, input_path, output_path)
