@@ -13,6 +13,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from backend.auth import get_user_predio
+from backend.config import settings
 from backend.schemas import (
     AnomalyMetaResponse,
     AnomalyRequest,
@@ -36,6 +37,13 @@ from backend.services.timeseries import read_timeseries
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ndvi", tags=["ndvi"])
 limiter = Limiter(key_func=get_remote_address)
+
+
+def _detail(internal: str, status: int) -> str:
+    """Oculta detalles internos en producción; los muestra en dev."""
+    if settings.environment == "production":
+        return "Recurso no encontrado" if status == 404 else "Error interno"
+    return internal
 
 DATA_DIR = Path("data")
 PREDIOS_DIR = DATA_DIR / "predios"
@@ -120,10 +128,10 @@ async def download_predio(request: Request, predio_id: str = Depends(get_user_pr
         )
     except ValueError as exc:
         logger.exception("download ValueError | predio=%s", predio_id)
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=_detail(str(exc), 404)) from exc
     except RuntimeError as exc:
         logger.exception("download RuntimeError | predio=%s", predio_id)
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=_detail(str(exc), 503)) from exc
 
     width, height = await asyncio.to_thread(_get_dims, path)
 
@@ -179,7 +187,7 @@ async def compute_predio_ndvi(request: Request, predio_id: str = Depends(get_use
         ndvi_path, stats = await asyncio.to_thread(compute_ndvi, input_path, output_path)
     except (ValueError, FileNotFoundError) as exc:
         logger.exception("compute error | predio=%s", predio_id)
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=_detail(str(exc), 422)) from exc
 
     return ComputeResponse(
         predio_id=predio_id,
@@ -210,7 +218,7 @@ def get_ndvi_image(
         png_bytes, _ = ndvi_to_png(ndvi_tif)
     except FileNotFoundError as exc:
         logger.exception("image FileNotFoundError | predio=%s", predio_id)
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=_detail(str(exc), 404)) from exc
 
     return Response(
         content=png_bytes,
@@ -319,10 +327,10 @@ def detect_anomaly(request: Request, predio_id: str = Depends(get_user_predio), 
         )
     except FileNotFoundError as exc:
         logger.exception("anomaly FileNotFoundError | predio=%s", predio_id)
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=_detail(str(exc), 404)) from exc
     except ValueError as exc:
         logger.exception("anomaly ValueError | predio=%s", predio_id)
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=_detail(str(exc), 422)) from exc
 
     def _or_none(v: float) -> float | None:
         return None if (v != v) else v
@@ -358,7 +366,7 @@ def get_anomaly_image(
         png_bytes, _ = zscore_to_png(zpath)
     except FileNotFoundError as exc:
         logger.exception("anomaly/image FileNotFoundError | predio=%s", predio_id)
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail=_detail(str(exc), 404)) from exc
     return Response(
         content=png_bytes,
         media_type="image/png",
