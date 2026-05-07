@@ -17,14 +17,16 @@ build/
 *.db
 *.sqlite
 
-# Datos satelitales descargados
+# Datos satelitales generados (efímeros — no versionar)
 data/raw/
 data/cache/
+data/ndvi/
+data/anomaly/
 *.tif
 *.jp2
 *.geotiff
 
-# WeasyPrint / PDFs generados
+# PDFs generados
 reports/*.pdf
 
 # Rasterio / GDAL

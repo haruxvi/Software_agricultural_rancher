@@ -12,7 +12,6 @@ class DownloadRequest(BaseModel):
 
 class DownloadResponse(BaseModel):
     predio_id: str
-    file_path: str
     date_from: date
     date_to: date
     width_px: int
@@ -35,7 +34,6 @@ class NDVIStatsSchema(BaseModel):
 
 class ComputeResponse(BaseModel):
     predio_id: str
-    ndvi_path: str
     date_from: date
     date_to: date
     stats: NDVIStatsSchema
@@ -70,7 +68,6 @@ class AnomalyResponse(BaseModel):
     date_from: date
     date_to: date
     threshold: float
-    zscore_path: str
     stats: AnomalyStatsSchema
 
 

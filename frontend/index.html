@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     html, body { height: 100%; margin: 0; }
     #map { height: 100%; }
@@ -24,7 +25,68 @@
 </head>
 <body class="bg-gray-900 text-white flex flex-col h-screen overflow-hidden">
 
-  <!-- Navbar -->
+  <!-- ── Auth overlay ─────────────────────────────────────────────────────── -->
+  <div id="auth-overlay" class="fixed inset-0 z-50 bg-gray-950 flex items-center justify-center">
+    <div class="w-full max-w-sm mx-4">
+
+      <!-- Logo -->
+      <div class="text-center mb-8">
+        <h1 class="text-2xl font-bold text-green-400">AgroVista</h1>
+        <p class="text-gray-500 text-sm mt-1">Monitor Satelital MVP</p>
+      </div>
+
+      <!-- Tabs -->
+      <div class="flex bg-gray-800 rounded-lg p-1 mb-6">
+        <button id="tab-login" onclick="switchTab('login')"
+          class="flex-1 py-2 text-sm rounded-md text-white bg-gray-700 transition-colors">
+          Iniciar sesión
+        </button>
+        <button id="tab-signup" onclick="switchTab('signup')"
+          class="flex-1 py-2 text-sm rounded-md text-gray-400 transition-colors">
+          Crear cuenta
+        </button>
+      </div>
+
+      <!-- Form -->
+      <form id="auth-form" onsubmit="handleAuth(event)">
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">Correo electrónico</label>
+            <input id="auth-email" type="email" required autocomplete="email"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm
+                     focus:outline-none focus:border-green-500 transition-colors"
+              placeholder="usuario@ejemplo.com" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">Contraseña</label>
+            <input id="auth-password" type="password" required minlength="6" autocomplete="current-password"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm
+                     focus:outline-none focus:border-green-500 transition-colors"
+              placeholder="••••••••" />
+          </div>
+
+          <div id="auth-error"
+            class="hidden p-3 bg-red-900/50 border border-red-700 rounded-lg text-sm text-red-300"></div>
+          <div id="auth-success"
+            class="hidden p-3 bg-green-900/50 border border-green-700 rounded-lg text-sm text-green-300"></div>
+
+          <button type="submit" id="auth-btn"
+            class="w-full bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-medium
+                   py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-60
+                   disabled:cursor-not-allowed">
+            <span id="auth-btn-label">Iniciar sesión</span>
+          </button>
+        </div>
+      </form>
+
+      <!-- Modo dev sin Supabase -->
+      <p id="dev-mode-hint" class="hidden mt-4 text-center text-xs text-gray-600">
+        Supabase no configurado — corre en modo desarrollo
+      </p>
+    </div>
+  </div>
+
+  <!-- ── Navbar ─────────────────────────────────────────────────────────────── -->
   <nav class="h-12 bg-gray-800 border-b border-gray-700 flex items-center px-4 shrink-0 z-10 gap-3">
     <span class="text-green-400 font-bold tracking-tight">AgroVista</span>
     <span class="text-gray-600">|</span>
@@ -35,6 +97,11 @@
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
         Serie Temporal
       </button>
+      <span id="user-email-display" class="hidden text-xs text-gray-400 max-w-[140px] truncate"></span>
+      <button id="btn-logout" onclick="handleLogout()"
+        class="hidden text-xs text-gray-400 hover:text-red-400 transition-colors">
+        Salir
+      </button>
       <div class="flex items-center gap-2">
         <span id="status-dot" class="w-2 h-2 rounded-full bg-gray-600"></span>
         <span id="status-text" class="text-xs text-gray-500">Conectando...</span>
@@ -42,7 +109,7 @@
     </div>
   </nav>
 
-  <!-- Main layout -->
+  <!-- ── Main layout ────────────────────────────────────────────────────────── -->
   <div class="flex flex-1 overflow-hidden relative">
 
     <!-- Sidebar -->
@@ -248,6 +315,162 @@
   <script>
     const PREDIO_ID = 'predio_prueba';
     let map, predioLayer, ndviOverlay, tsChart, chartVisible = false;
+    let ndviBlobUrl = null;
+    let anomalyBlobUrl = null;
+    let anomalyOverlay = null;
+    let lastAnomalyParams = null;
+
+    // ── Auth ────────────────────────────────────────────────────────────────────
+
+    let supabaseClient = null;
+    let currentToken = null;
+    let currentTab = 'login';
+    let appInitialized = false;
+
+    async function initAuth() {
+      try {
+        const configRes = await fetch('/config');
+        if (!configRes.ok) throw new Error('No se pudo cargar la configuración del servidor');
+        const config = await configRes.json();
+
+        if (!config.supabase_url) {
+          // Modo desarrollo sin Supabase — saltar auth
+          document.getElementById('dev-mode-hint').classList.remove('hidden');
+          document.getElementById('auth-overlay').classList.add('hidden');
+          bootApp();
+          return;
+        }
+
+        supabaseClient = window.supabase.createClient(config.supabase_url, config.supabase_anon_key);
+
+        supabaseClient.auth.onAuthStateChange((_event, session) => {
+          if (session) {
+            currentToken = session.access_token;
+            onAuthenticated(session.user);
+          } else {
+            currentToken = null;
+            onUnauthenticated();
+          }
+        });
+
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) onUnauthenticated();
+
+      } catch (err) {
+        showAuthMsg('error', err.message);
+      }
+    }
+
+    function onAuthenticated(user) {
+      document.getElementById('auth-overlay').classList.add('hidden');
+      const emailEl = document.getElementById('user-email-display');
+      emailEl.textContent = user.email;
+      emailEl.classList.remove('hidden');
+      document.getElementById('btn-logout').classList.remove('hidden');
+      if (!appInitialized) bootApp();
+    }
+
+    function onUnauthenticated() {
+      document.getElementById('auth-overlay').classList.remove('hidden');
+      document.getElementById('user-email-display').classList.add('hidden');
+      document.getElementById('btn-logout').classList.add('hidden');
+    }
+
+    function bootApp() {
+      if (appInitialized) return;
+      appInitialized = true;
+      initMap();
+      checkApiHealth();
+    }
+
+    async function handleAuth(event) {
+      event.preventDefault();
+      const email    = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-password').value;
+      const btn      = document.getElementById('auth-btn');
+
+      btn.disabled = true;
+      document.getElementById('auth-btn-label').textContent = 'Procesando...';
+      clearAuthMsgs();
+
+      try {
+        let result;
+        if (currentTab === 'login') {
+          result = await supabaseClient.auth.signInWithPassword({ email, password });
+        } else {
+          result = await supabaseClient.auth.signUp({ email, password });
+        }
+
+        if (result.error) throw result.error;
+
+        // signUp sin email confirmado retorna session=null
+        if (currentTab === 'signup' && !result.data.session) {
+          showAuthMsg('success', 'Cuenta creada. Revisa tu correo para confirmar antes de iniciar sesión.');
+        }
+      } catch (err) {
+        showAuthMsg('error', err.message);
+      } finally {
+        btn.disabled = false;
+        document.getElementById('auth-btn-label').textContent =
+          currentTab === 'login' ? 'Iniciar sesión' : 'Crear cuenta';
+      }
+    }
+
+    async function handleLogout() {
+      await supabaseClient?.auth.signOut();
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      const isLogin = tab === 'login';
+      document.getElementById('tab-login').className =
+        `flex-1 py-2 text-sm rounded-md transition-colors ${isLogin ? 'text-white bg-gray-700' : 'text-gray-400'}`;
+      document.getElementById('tab-signup').className =
+        `flex-1 py-2 text-sm rounded-md transition-colors ${!isLogin ? 'text-white bg-gray-700' : 'text-gray-400'}`;
+      document.getElementById('auth-btn-label').textContent =
+        isLogin ? 'Iniciar sesión' : 'Crear cuenta';
+      clearAuthMsgs();
+    }
+
+    function showAuthMsg(type, msg) {
+      const id = type === 'error' ? 'auth-error' : 'auth-success';
+      const el = document.getElementById(id);
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+
+    function clearAuthMsgs() {
+      document.getElementById('auth-error').classList.add('hidden');
+      document.getElementById('auth-success').classList.add('hidden');
+    }
+
+    // fetch autenticado — agrega Authorization header cuando hay token
+    async function authFetch(url, options = {}) {
+      const res = await fetch(url, {
+        ...options,
+        headers: {
+          ...options.headers,
+          ...(currentToken ? { Authorization: `Bearer ${currentToken}` } : {}),
+        },
+      });
+      // Token expirado inesperadamente — volver al login
+      if (res.status === 401 && supabaseClient) {
+        await supabaseClient.auth.signOut();
+      }
+      return res;
+    }
+
+    // Descarga imagen autenticada y devuelve un blob URL para Leaflet imageOverlay
+    async function fetchAuthImage(url) {
+      const res = await authFetch(url);
+      if (!res.ok) {
+        let detail = `Error ${res.status}`;
+        try { detail = (await res.json()).detail || detail; } catch (_) {}
+        throw new Error(detail);
+      }
+      const blob = await res.blob();
+      return URL.createObjectURL(blob);
+    }
 
     // ── Mapa ────────────────────────────────────────────────────────────────────
 
@@ -308,13 +531,20 @@
 
       try {
         const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
-        const res = await fetch(`/ndvi/predios/${PREDIO_ID}/meta?${params}`);
-        if (!res.ok) { const e = await res.json(); throw new Error(e.detail || `Error ${res.status}`); }
-        const meta = await res.json();
 
-        const imageUrl = `/ndvi/predios/${PREDIO_ID}/image?${params}&_t=${Date.now()}`;
+        const metaRes = await authFetch(`/ndvi/predios/${PREDIO_ID}/meta?${params}`);
+        if (!metaRes.ok) { const e = await metaRes.json(); throw new Error(e.detail || `Error ${metaRes.status}`); }
+        const meta = await metaRes.json();
+
+        // Cargar imagen autenticada como blob para imageOverlay
+        const blobUrl = await fetchAuthImage(
+          `/ndvi/predios/${PREDIO_ID}/image?${params}&_t=${Date.now()}`
+        );
+        if (ndviBlobUrl) URL.revokeObjectURL(ndviBlobUrl);
+        ndviBlobUrl = blobUrl;
+
         if (ndviOverlay) map.removeLayer(ndviOverlay);
-        ndviOverlay = L.imageOverlay(imageUrl, meta.bounds_leaflet, {
+        ndviOverlay = L.imageOverlay(blobUrl, meta.bounds_leaflet, {
           opacity: document.getElementById('opacity-slider').value / 100,
           interactive: false,
         }).addTo(map);
@@ -337,7 +567,6 @@
       if (chartVisible && !tsChart) {
         await loadTimeseries();
       }
-      // Notificar a Leaflet que el contenedor cambió de tamaño
       setTimeout(() => map.invalidateSize(), 310);
     }
 
@@ -347,7 +576,7 @@
       statusEl.textContent = 'Cargando...';
 
       try {
-        const res = await fetch(`/ndvi/predios/${PREDIO_ID}/timeseries`);
+        const res = await authFetch(`/ndvi/predios/${PREDIO_ID}/timeseries`);
         if (!res.ok) throw new Error(`Error ${res.status}`);
         const data = await res.json();
 
@@ -514,18 +743,28 @@
 
     // ── PDF ──────────────────────────────────────────────────────────────────────
 
-    function downloadPDF() {
+    async function downloadPDF() {
       const dateFrom = document.getElementById('date-from').value;
       const dateTo   = document.getElementById('date-to').value;
       if (!dateFrom || !dateTo) { showError('Selecciona fechas antes de descargar el informe.'); return; }
-      const url = `/report/predios/${PREDIO_ID}/pdf?date_from=${dateFrom}&date_to=${dateTo}`;
-      window.open(url, '_blank');
+
+      try {
+        const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+        const res = await authFetch(`/report/predios/${PREDIO_ID}/pdf?${params}`);
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail || `Error ${res.status}`); }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `agrovista_${PREDIO_ID}_${dateFrom}_${dateTo}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        showError(err.message);
+      }
     }
 
     // ── Anomalías ────────────────────────────────────────────────────────────────
-
-    let anomalyOverlay = null;
-    let lastAnomalyParams = null;
 
     async function loadAnomaly() {
       const dateFrom  = document.getElementById('an-date-from').value;
@@ -539,8 +778,7 @@
       clearAnError();
 
       try {
-        // 1. Calcular z-score en backend
-        const postRes = await fetch(`/ndvi/predios/${PREDIO_ID}/anomaly`, {
+        const postRes = await authFetch(`/ndvi/predios/${PREDIO_ID}/anomaly`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ date_from: dateFrom, date_to: dateTo, threshold: parseFloat(threshold) }),
@@ -548,7 +786,6 @@
         if (!postRes.ok) { const e = await postRes.json(); throw new Error(e.detail || `Error ${postRes.status}`); }
         const result = await postRes.json();
 
-        // 2. Mostrar resultados
         const s = result.stats;
         const fmt1 = v => (v == null ? '—' : v.toFixed(1) + '%');
         document.getElementById('an-stress').textContent = fmt1(s.pct_stress);
@@ -558,7 +795,6 @@
           `Baseline: ${s.baseline_months} mes${s.baseline_months !== 1 ? 'es' : ''} | umbral z=±${threshold}`;
         document.getElementById('anomaly-result').classList.remove('hidden');
 
-        // 3. Cargar overlay inmediatamente
         lastAnomalyParams = { dateFrom, dateTo };
         await _showAnomalyOverlay(dateFrom, dateTo);
 
@@ -571,13 +807,19 @@
 
     async function _showAnomalyOverlay(dateFrom, dateTo) {
       const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
-      const metaRes = await fetch(`/ndvi/predios/${PREDIO_ID}/anomaly/meta?${params}`);
+
+      const metaRes = await authFetch(`/ndvi/predios/${PREDIO_ID}/anomaly/meta?${params}`);
       if (!metaRes.ok) return;
       const meta = await metaRes.json();
 
-      const imageUrl = `/ndvi/predios/${PREDIO_ID}/anomaly/image?${params}&_t=${Date.now()}`;
+      const blobUrl = await fetchAuthImage(
+        `/ndvi/predios/${PREDIO_ID}/anomaly/image?${params}&_t=${Date.now()}`
+      );
+      if (anomalyBlobUrl) URL.revokeObjectURL(anomalyBlobUrl);
+      anomalyBlobUrl = blobUrl;
+
       if (anomalyOverlay) map.removeLayer(anomalyOverlay);
-      anomalyOverlay = L.imageOverlay(imageUrl, meta.bounds_leaflet, {
+      anomalyOverlay = L.imageOverlay(blobUrl, meta.bounds_leaflet, {
         opacity: 0.75, interactive: false,
       }).addTo(map);
     }
@@ -610,8 +852,7 @@
 
     // ── Boot ────────────────────────────────────────────────────────────────────
 
-    initMap();
-    checkApiHealth();
+    initAuth();
   </script>
 </body>
 </html>

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\user\\\\Documents\\\\Software_agricultural_rancher\" -Recurse -Force)",
+      "Bash(Select-Object -Property FullName)",
+      "PowerShell(head *)",
+      "Bash(python -m ruff check backend/)",
+      "Bash(ruff check *)"
+    ]
+  }
+}
