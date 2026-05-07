@@ -198,7 +198,11 @@ def get_ndvi_image(
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    return Response(content=png_bytes, media_type="image/png")
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @router.get("/predios/{predio_id}/meta", response_model=NDVIMetaResponse)
@@ -331,7 +335,11 @@ def get_anomaly_image(
         png_bytes, _ = zscore_to_png(zpath)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return Response(content=png_bytes, media_type="image/png")
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @router.get("/predios/{predio_id}/anomaly/meta", response_model=AnomalyMetaResponse)
