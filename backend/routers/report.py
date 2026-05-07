@@ -1,18 +1,15 @@
 import logging
 from datetime import date
 from pathlib import Path
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path as FPath, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
-from backend.auth import get_current_user
+from backend.auth import get_user_predio
 from backend.services.report import build_report
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/report", tags=["report"], dependencies=[Depends(get_current_user)])
-
-PredioId = Annotated[str, FPath(pattern=r"^[a-zA-Z0-9_-]{1,64}$")]
+router = APIRouter(prefix="/report", tags=["report"])
 
 DATA_DIR    = Path("data")
 NDVI_DIR    = DATA_DIR / "ndvi"
@@ -22,11 +19,12 @@ PREDIOS_DIR = DATA_DIR / "predios"
 
 @router.get("/predios/{predio_id}/pdf")
 def get_report_pdf(
-    predio_id: PredioId,
+    predio_id: str = Depends(get_user_predio),
     date_from: date = Query(...),
     date_to: date = Query(...),
 ) -> Response:
     """Genera y descarga el reporte PDF de NDVI para el período indicado."""
+    logger.info("pdf | predio=%s date_from=%s date_to=%s", predio_id, date_from, date_to)
     try:
         pdf_bytes = build_report(
             predio_id=predio_id,
