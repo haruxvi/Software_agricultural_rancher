@@ -5,10 +5,12 @@ from datetime import date
 from pathlib import Path
 
 import rasterio
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from shapely.errors import ShapelyError
 from shapely.geometry import shape
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from backend.auth import get_user_predio
 from backend.schemas import (
@@ -33,6 +35,7 @@ from backend.services.timeseries import read_timeseries
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ndvi", tags=["ndvi"])
+limiter = Limiter(key_func=get_remote_address)
 
 DATA_DIR = Path("data")
 PREDIOS_DIR = DATA_DIR / "predios"
@@ -83,7 +86,8 @@ def _ndvi_path(predio_id: str, date_from: date, date_to: date) -> Path:
 
 
 @router.post("/predios/{predio_id}/download", response_model=DownloadResponse)
-async def download_predio(predio_id: str = Depends(get_user_predio), body: DownloadRequest = ...) -> DownloadResponse:
+@limiter.limit("5/second")
+async def download_predio(request: Request, predio_id: str = Depends(get_user_predio), body: DownloadRequest = ...) -> DownloadResponse:
     """Descarga bandas B04/B08 de Sentinel-2 para el predio indicado."""
     logger.info("download | predio=%s date_from=%s date_to=%s", predio_id, body.date_from, body.date_to)
     bbox = _load_predio_bbox(predio_id)
@@ -134,7 +138,8 @@ async def download_predio(predio_id: str = Depends(get_user_predio), body: Downl
 
 
 @router.post("/predios/{predio_id}/compute", response_model=ComputeResponse)
-async def compute_predio_ndvi(predio_id: str = Depends(get_user_predio), body: ComputeRequest = ...) -> ComputeResponse:
+@limiter.limit("5/second")
+async def compute_predio_ndvi(request: Request, predio_id: str = Depends(get_user_predio), body: ComputeRequest = ...) -> ComputeResponse:
     """Calcula NDVI desde el GeoTIFF B04/B08 previamente descargado."""
     logger.info("compute | predio=%s date_from=%s date_to=%s", predio_id, body.date_from, body.date_to)
     input_path = RAW_DIR / predio_id / f"{body.date_from}_{body.date_to}_B04B08.tif"
@@ -191,7 +196,9 @@ async def compute_predio_ndvi(predio_id: str = Depends(get_user_predio), body: C
 
 
 @router.get("/predios/{predio_id}/image")
+@limiter.limit("30/minute")
 def get_ndvi_image(
+    request: Request,
     predio_id: str = Depends(get_user_predio),
     date_from: date = Query(...),
     date_to: date = Query(...),
@@ -296,7 +303,8 @@ def _zscore_path(predio_id: str, date_from: date, date_to: date) -> Path:
 
 
 @router.post("/predios/{predio_id}/anomaly", response_model=AnomalyResponse)
-def detect_anomaly(predio_id: str = Depends(get_user_predio), body: AnomalyRequest = ...) -> AnomalyResponse:
+@limiter.limit("5/second")
+def detect_anomaly(request: Request, predio_id: str = Depends(get_user_predio), body: AnomalyRequest = ...) -> AnomalyResponse:
     """Calcula el z-score NDVI del mes indicado frente al resto de la serie temporal."""
     logger.info("anomaly | predio=%s date_from=%s date_to=%s", predio_id, body.date_from, body.date_to)
     output_path = ANOMALY_DIR / predio_id / f"{body.date_from}_{body.date_to}_zscore.tif"
@@ -336,7 +344,9 @@ def detect_anomaly(predio_id: str = Depends(get_user_predio), body: AnomalyReque
 
 
 @router.get("/predios/{predio_id}/anomaly/image")
+@limiter.limit("30/minute")
 def get_anomaly_image(
+    request: Request,
     predio_id: str = Depends(get_user_predio),
     date_from: date = Query(...),
     date_to: date = Query(...),

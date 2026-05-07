@@ -39,6 +39,9 @@ supabase==2.15.2
 # Static files (necesario para StaticFiles de FastAPI)
 aiofiles==24.1.0
 
+# Seguridad
+slowapi==0.1.9
+
 # Dev / Test
 pytest==8.3.5
 pytest-asyncio==0.26.0
