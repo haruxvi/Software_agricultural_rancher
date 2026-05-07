@@ -6,6 +6,8 @@ from pathlib import Path
 import rasterio
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
+from shapely.errors import ShapelyError
+from shapely.geometry import shape
 
 from backend.auth import get_user_predio
 from backend.schemas import (
@@ -52,10 +54,16 @@ def _load_predio_bbox(predio_id: str) -> tuple[float, float, float, float]:
     with geojson_path.open() as f:
         fc = json.load(f)
 
-    coords = fc["features"][0]["geometry"]["coordinates"][0]
-    lons = [c[0] for c in coords]
-    lats = [c[1] for c in coords]
-    return min(lons), min(lats), max(lons), max(lats)
+    try:
+        geom_dict = fc["features"][0]["geometry"]
+        geom = shape(geom_dict)
+    except (KeyError, IndexError, ShapelyError) as exc:
+        raise HTTPException(
+            status_code=422, detail=f"GeoJSON inválido para '{predio_id}'"
+        ) from exc
+
+    min_lon, min_lat, max_lon, max_lat = geom.bounds
+    return min_lon, min_lat, max_lon, max_lat
 
 
 def _ndvi_path(predio_id: str, date_from: date, date_to: date) -> Path:
