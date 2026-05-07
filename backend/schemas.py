@@ -1,13 +1,20 @@
 from datetime import date
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class DownloadRequest(BaseModel):
     date_from: date = Field(..., description="Inicio del rango de búsqueda (YYYY-MM-DD)")
     date_to: date = Field(..., description="Fin del rango de búsqueda (YYYY-MM-DD)")
     max_cloud_pct: float = Field(30.0, ge=0, le=100, description="Nubosidad máxima %")
-    resolution: int = Field(10, ge=10, le=60, description="Resolución en metros")
+    resolution: Literal[10, 20, 60] = Field(10, description="Resolución en metros (10, 20 o 60)")
+
+    @model_validator(mode="after")
+    def _dates_order(self) -> "DownloadRequest":
+        if self.date_from >= self.date_to:
+            raise ValueError("date_from debe ser anterior a date_to")
+        return self
 
 
 class DownloadResponse(BaseModel):
@@ -22,6 +29,12 @@ class DownloadResponse(BaseModel):
 class ComputeRequest(BaseModel):
     date_from: date = Field(..., description="Fecha inicio usada en la descarga")
     date_to: date = Field(..., description="Fecha fin usada en la descarga")
+
+    @model_validator(mode="after")
+    def _dates_order(self) -> "ComputeRequest":
+        if self.date_from >= self.date_to:
+            raise ValueError("date_from debe ser anterior a date_to")
+        return self
 
 
 class NDVIStatsSchema(BaseModel):
@@ -51,7 +64,13 @@ class NDVIMetaResponse(BaseModel):
 class AnomalyRequest(BaseModel):
     date_from: date = Field(..., description="Inicio del mes a evaluar")
     date_to: date = Field(..., description="Fin del mes a evaluar")
-    threshold: float = Field(2.0, ge=0.5, le=4.0, description="Umbral z-score para anomalía")
+    threshold: float = Field(2.0, ge=0.5, le=5.0, description="Umbral z-score para anomalía")
+
+    @model_validator(mode="after")
+    def _dates_order(self) -> "AnomalyRequest":
+        if self.date_from >= self.date_to:
+            raise ValueError("date_from debe ser anterior a date_to")
+        return self
 
 
 class AnomalyStatsSchema(BaseModel):
