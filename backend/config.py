@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,16 @@ class Settings(BaseSettings):
 
     environment: str = "development"
     log_level: str = "INFO"
+
+    cors_origins: list[str] = ["http://localhost:8000"]
+    allowed_hosts: list[str] = ["*"]
+
+    @field_validator("cors_origins", "allowed_hosts", mode="before")
+    @classmethod
+    def _parse_comma_list(cls, v: object) -> list[str]:
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v  # type: ignore[return-value]
 
 
 settings = Settings()
