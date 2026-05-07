@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import date
@@ -82,16 +83,14 @@ def _ndvi_path(predio_id: str, date_from: date, date_to: date) -> Path:
 
 
 @router.post("/predios/{predio_id}/download", response_model=DownloadResponse)
-def download_predio(predio_id: str = Depends(get_user_predio), body: DownloadRequest = ...) -> DownloadResponse:
+async def download_predio(predio_id: str = Depends(get_user_predio), body: DownloadRequest = ...) -> DownloadResponse:
     """Descarga bandas B04/B08 de Sentinel-2 para el predio indicado."""
-    if body.date_from > body.date_to:
-        raise HTTPException(status_code=422, detail="date_from debe ser anterior a date_to")
-
     bbox = _load_predio_bbox(predio_id)
     output_path = RAW_DIR / predio_id / f"{body.date_from}_{body.date_to}_B04B08.tif"
 
     try:
-        path = download_sentinel2(
+        path = await asyncio.to_thread(
+            download_sentinel2,
             bbox_coords=bbox,
             date_from=body.date_from,
             date_to=body.date_to,
@@ -104,8 +103,11 @@ def download_predio(predio_id: str = Depends(get_user_predio), body: DownloadReq
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    with rasterio.open(path) as ds:
-        width, height = ds.width, ds.height
+    def _get_dims(p: Path) -> tuple[int, int]:
+        with rasterio.open(p) as ds:
+            return ds.width, ds.height
+
+    width, height = await asyncio.to_thread(_get_dims, path)
 
     return DownloadResponse(
         predio_id=predio_id,
@@ -118,7 +120,7 @@ def download_predio(predio_id: str = Depends(get_user_predio), body: DownloadReq
 
 
 @router.post("/predios/{predio_id}/compute", response_model=ComputeResponse)
-def compute_predio_ndvi(predio_id: str = Depends(get_user_predio), body: ComputeRequest = ...) -> ComputeResponse:
+async def compute_predio_ndvi(predio_id: str = Depends(get_user_predio), body: ComputeRequest = ...) -> ComputeResponse:
     """Calcula NDVI desde el GeoTIFF B04/B08 previamente descargado."""
     input_path = RAW_DIR / predio_id / f"{body.date_from}_{body.date_to}_B04B08.tif"
     if not input_path.exists():
@@ -133,7 +135,7 @@ def compute_predio_ndvi(predio_id: str = Depends(get_user_predio), body: Compute
     output_path = NDVI_DIR / predio_id / f"{body.date_from}_{body.date_to}_NDVI.tif"
 
     try:
-        ndvi_path, stats = compute_ndvi(input_path, output_path)
+        ndvi_path, stats = await asyncio.to_thread(compute_ndvi, input_path, output_path)
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
