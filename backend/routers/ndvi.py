@@ -2,13 +2,12 @@ import json
 import logging
 from datetime import date
 from pathlib import Path
-from typing import Annotated
 
 import rasterio
-from fastapi import APIRouter, Depends, HTTPException, Path as FPath, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
-from backend.auth import get_current_user
+from backend.auth import get_user_predio
 from backend.schemas import (
     AnomalyMetaResponse,
     AnomalyRequest,
@@ -30,10 +29,7 @@ from backend.services.sentinel import download_sentinel2
 from backend.services.timeseries import read_timeseries
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/ndvi", tags=["ndvi"], dependencies=[Depends(get_current_user)])
-
-# Solo alfanumérico + guiones — previene path traversal
-PredioId = Annotated[str, FPath(pattern=r"^[a-zA-Z0-9_-]{1,64}$")]
+router = APIRouter(prefix="/ndvi", tags=["ndvi"])
 
 DATA_DIR = Path("data")
 PREDIOS_DIR = DATA_DIR / "predios"
@@ -48,6 +44,8 @@ _MONTH_ES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun",
 def _load_predio_bbox(predio_id: str) -> tuple[float, float, float, float]:
     """Devuelve (min_lon, min_lat, max_lon, max_lat) del primer feature del GeoJSON."""
     geojson_path = PREDIOS_DIR / f"{predio_id}.geojson"
+    if not geojson_path.resolve().is_relative_to(PREDIOS_DIR.resolve()):
+        raise HTTPException(status_code=400, detail="Predio ID inválido")
     if not geojson_path.exists():
         raise HTTPException(status_code=404, detail=f"Predio '{predio_id}' no encontrado")
 
@@ -62,6 +60,8 @@ def _load_predio_bbox(predio_id: str) -> tuple[float, float, float, float]:
 
 def _ndvi_path(predio_id: str, date_from: date, date_to: date) -> Path:
     path = NDVI_DIR / predio_id / f"{date_from}_{date_to}_NDVI.tif"
+    if not path.resolve().is_relative_to(NDVI_DIR.resolve()):
+        raise HTTPException(status_code=400, detail="Predio ID inválido")
     if not path.exists():
         raise HTTPException(
             status_code=404,
@@ -74,7 +74,7 @@ def _ndvi_path(predio_id: str, date_from: date, date_to: date) -> Path:
 
 
 @router.post("/predios/{predio_id}/download", response_model=DownloadResponse)
-def download_predio(predio_id: PredioId, body: DownloadRequest) -> DownloadResponse:
+def download_predio(predio_id: str = Depends(get_user_predio), body: DownloadRequest = ...) -> DownloadResponse:
     """Descarga bandas B04/B08 de Sentinel-2 para el predio indicado."""
     if body.date_from > body.date_to:
         raise HTTPException(status_code=422, detail="date_from debe ser anterior a date_to")
@@ -110,7 +110,7 @@ def download_predio(predio_id: PredioId, body: DownloadRequest) -> DownloadRespo
 
 
 @router.post("/predios/{predio_id}/compute", response_model=ComputeResponse)
-def compute_predio_ndvi(predio_id: PredioId, body: ComputeRequest) -> ComputeResponse:
+def compute_predio_ndvi(predio_id: str = Depends(get_user_predio), body: ComputeRequest = ...) -> ComputeResponse:
     """Calcula NDVI desde el GeoTIFF B04/B08 previamente descargado."""
     input_path = RAW_DIR / predio_id / f"{body.date_from}_{body.date_to}_B04B08.tif"
     if not input_path.exists():
@@ -145,7 +145,7 @@ def compute_predio_ndvi(predio_id: PredioId, body: ComputeRequest) -> ComputeRes
 
 @router.get("/predios/{predio_id}/image")
 def get_ndvi_image(
-    predio_id: PredioId,
+    predio_id: str = Depends(get_user_predio),
     date_from: date = Query(...),
     date_to: date = Query(...),
 ) -> Response:
@@ -161,7 +161,7 @@ def get_ndvi_image(
 
 @router.get("/predios/{predio_id}/meta", response_model=NDVIMetaResponse)
 def get_ndvi_meta(
-    predio_id: PredioId,
+    predio_id: str = Depends(get_user_predio),
     date_from: date = Query(...),
     date_to: date = Query(...),
 ) -> NDVIMetaResponse:
@@ -194,7 +194,7 @@ def get_ndvi_meta(
 
 
 @router.get("/predios/{predio_id}/timeseries", response_model=TimeseriesResponse)
-def get_timeseries(predio_id: PredioId) -> TimeseriesResponse:
+def get_timeseries(predio_id: str = Depends(get_user_predio)) -> TimeseriesResponse:
     """Devuelve la serie temporal NDVI de todos los meses calculados para el predio."""
     predio_ndvi_dir = NDVI_DIR / predio_id
     raw_points = read_timeseries(predio_ndvi_dir)
@@ -227,6 +227,8 @@ def get_timeseries(predio_id: PredioId) -> TimeseriesResponse:
 
 def _zscore_path(predio_id: str, date_from: date, date_to: date) -> Path:
     path = ANOMALY_DIR / predio_id / f"{date_from}_{date_to}_zscore.tif"
+    if not path.resolve().is_relative_to(ANOMALY_DIR.resolve()):
+        raise HTTPException(status_code=400, detail="Predio ID inválido")
     if not path.exists():
         raise HTTPException(
             status_code=404,
@@ -239,7 +241,7 @@ def _zscore_path(predio_id: str, date_from: date, date_to: date) -> Path:
 
 
 @router.post("/predios/{predio_id}/anomaly", response_model=AnomalyResponse)
-def detect_anomaly(predio_id: PredioId, body: AnomalyRequest) -> AnomalyResponse:
+def detect_anomaly(predio_id: str = Depends(get_user_predio), body: AnomalyRequest = ...) -> AnomalyResponse:
     """Calcula el z-score NDVI del mes indicado frente al resto de la serie temporal."""
     output_path = ANOMALY_DIR / predio_id / f"{body.date_from}_{body.date_to}_zscore.tif"
 
@@ -277,7 +279,7 @@ def detect_anomaly(predio_id: PredioId, body: AnomalyRequest) -> AnomalyResponse
 
 @router.get("/predios/{predio_id}/anomaly/image")
 def get_anomaly_image(
-    predio_id: PredioId,
+    predio_id: str = Depends(get_user_predio),
     date_from: date = Query(...),
     date_to: date = Query(...),
 ) -> Response:
@@ -292,7 +294,7 @@ def get_anomaly_image(
 
 @router.get("/predios/{predio_id}/anomaly/meta", response_model=AnomalyMetaResponse)
 def get_anomaly_meta(
-    predio_id: PredioId,
+    predio_id: str = Depends(get_user_predio),
     date_from: date = Query(...),
     date_to: date = Query(...),
 ) -> AnomalyMetaResponse:
