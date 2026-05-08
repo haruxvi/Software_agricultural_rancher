@@ -54,6 +54,7 @@ docs/decisions/ ADRs con fecha y razón
 - Estructuras inspiradas en otros sistemas DEBEN derivarse de fuentes públicas
 - Datos de prueba: solo fixtures sintéticos, nunca clientes reales
 - Documentar decisiones de arquitectura en docs/decisions/
+- Todo endpoint que reciba `predio_id` DEBE usar `get_user_predio` dependency. Nunca usar `predio_id` directo del path sin validar ownership (IDOR). Ver ADR-009.
 
 ## Roadmap MVP (no saltar etapas)
 
