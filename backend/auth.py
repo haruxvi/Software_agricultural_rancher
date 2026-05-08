@@ -4,8 +4,10 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Path, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
+from sqlalchemy.orm import Session
 
 from backend.config import settings
+from backend.db import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -51,32 +53,18 @@ def get_current_user(
 def get_user_predio(
     predio_id: Annotated[str, Path(pattern=_PREDIO_PATTERN)],
     user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
 ) -> str:
     """Valida que el usuario tenga acceso al predio. En dev, omite validación."""
     if not settings.supabase_jwt_secret:
         # Modo desarrollo — sin BD de ownership
         return predio_id
 
-    # Producción: consultar tabla user_predios
-    from backend.db import SessionLocal
-    from backend.models.user_predio import UserPredio
+    from backend.services.authorization import user_owns_predio
 
-    db = SessionLocal()
-    try:
-        from sqlalchemy import select
-
-        row = db.execute(
-            select(UserPredio).where(
-                UserPredio.user_id == user["sub"],
-                UserPredio.predio_id == predio_id,
-            )
-        ).scalar_one_or_none()
-        if row is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes acceso a este predio",
-            )
-        return predio_id
-    finally:
-        db.close()
-
+    if not user_owns_predio(db, user["sub"], predio_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes acceso a este predio",
+        )
+    return predio_id
