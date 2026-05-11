@@ -62,14 +62,24 @@ def get_user_predio(
     user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> str:
-    """Valida que el usuario tenga acceso al predio. En dev, omite validación."""
+    """Valida ownership del predio. Solo en development sin secret omite la verificación."""
     if not settings.supabase_jwt_secret:
-        # Modo desarrollo — sin BD de ownership
-        return predio_id
+        if settings.environment == "development":
+            return predio_id
+        logger.critical(
+            "SUPABASE_JWT_SECRET no configurado en entorno '%s'", settings.environment
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio mal configurado",
+        )
 
     from backend.services.authorization import user_owns_predio
 
     if not user_owns_predio(db, user["sub"], predio_id):
+        logger.warning(
+            "Acceso denegado | user_id=%s predio_id=%s", user.get("sub"), predio_id
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes acceso a este predio",
