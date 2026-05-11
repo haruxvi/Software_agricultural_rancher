@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
+from jose import jwt as jose_jwt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -69,4 +70,56 @@ def test_sin_ownership_403():
 def test_sin_token_401():
     """Sin token → 401."""
     resp = TestClient(app).get(ENDPOINT)
+    assert resp.status_code == 401
+
+
+# ── Fail-closed y validaciones JWT ───────────────────────────────────────────
+
+
+def test_prod_sin_secrets_falla_al_arrancar(monkeypatch):
+    """Settings no arranca en production sin secrets obligatorios → ValidationError."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.delenv("SUPABASE_JWT_SECRET", raising=False)
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+
+    from pydantic import ValidationError
+
+    from backend.config import Settings
+
+    with pytest.raises(ValidationError, match="requeridas en producción"):
+        Settings(_env_file=None)
+
+
+def test_prod_con_secret_sin_token_401(monkeypatch):
+    """En production con secret configurado, sin token → 401 (nunca fake user)."""
+    monkeypatch.setattr(settings, "environment", "production")
+    resp = TestClient(app).get(ENDPOINT)
+    assert resp.status_code == 401
+
+
+def test_token_sub_vacio_401(monkeypatch):
+    """Token válido pero con sub vacío → 401."""
+    monkeypatch.setattr(settings, "supabase_url", "")
+    token = jose_jwt.encode(
+        {"sub": "", "aud": "authenticated"},
+        "test-secret",
+        algorithm="HS256",
+    )
+    resp = TestClient(app).get(ENDPOINT, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+
+
+def test_token_issuer_incorrecto_401(monkeypatch):
+    """Token con issuer distinto al esperado → 401."""
+    monkeypatch.setattr(settings, "supabase_url", "https://myproject.supabase.co")
+    token = jose_jwt.encode(
+        {
+            "sub": OWNER_ID,
+            "aud": "authenticated",
+            "iss": "https://intruder.supabase.co/auth/v1",
+        },
+        "test-secret",
+        algorithm="HS256",
+    )
+    resp = TestClient(app).get(ENDPOINT, headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 401
