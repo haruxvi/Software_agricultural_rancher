@@ -47,6 +47,25 @@ docs/decisions/ ADRs con fecha y razón
 - Variables en inglés, comentarios en español OK
 - Conventional Commits
 
+## Security — CI/CD
+
+Todo PR debe pasar los siguientes workflows antes de merge:
+
+| Workflow | Herramienta | Umbral de falla |
+|---|---|---|
+| `security.yml` | Bandit | Hallazgos HIGH+ |
+| `security.yml` | pip-audit | Cualquier CVE conocido |
+| `security.yml` | Semgrep | Hallazgos ERROR (HIGH) |
+| `codeql.yml` | CodeQL security-extended | Alerta en Security tab |
+
+**GitHub UI — activar manualmente en Settings del repo:**
+- Security > Dependabot alerts ✓
+- Security > Dependabot security updates ✓
+- Security > Secret scanning ✓
+- Security > Push protection ✓ (bloquea push de secrets antes de llegar al servidor)
+
+**Ruff reglas S** (`pyproject.toml`): habilitadas. No ignorar S-rules sin documentar el motivo en un comentario o per-file-ignore con justificación.
+
 ## Reglas de seguridad / IP
 
 - Credenciales solo en .env (en .gitignore)
