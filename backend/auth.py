@@ -21,10 +21,17 @@ _PREDIO_PATTERN = r"^[a-zA-Z0-9_-]{1,64}$"
 def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> dict:
-    """Valida JWT emitido por Supabase. En dev (sin JWT_SECRET) retorna usuario ficticio."""
+    """Valida JWT emitido por Supabase. Solo en development sin secret retorna usuario ficticio."""
     if not settings.supabase_jwt_secret:
-        # Modo desarrollo — Supabase no configurado
-        return {"sub": "dev-user", "email": "dev@local", "role": "authenticated"}
+        if settings.environment == "development":
+            return {"sub": "dev-user", "email": "dev@local", "role": "authenticated"}
+        logger.critical(
+            "SUPABASE_JWT_SECRET no configurado en entorno '%s'", settings.environment
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio mal configurado",
+        )
 
     if credentials is None:
         raise HTTPException(
