@@ -1,0 +1,6 @@
+[bandit]
+# B101 assert_used: pytest usa assert de forma masiva — falso positivo en tests
+skips = B101
+# Severity baseline: reportar MEDIUM y superior al correr manualmente
+# En CI se sobreescribe con --severity-level high
+exclude_dirs = backend/tests,venv,.venv

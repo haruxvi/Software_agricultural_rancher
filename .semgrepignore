@@ -1,0 +1,6 @@
+# Excluir de Semgrep: tests (falsos positivos de assert/hardcoded-test-values)
+# y data/ (archivos GeoJSON y GeoTIFF, no código Python)
+backend/tests/
+data/
+venv/
+.venv/
