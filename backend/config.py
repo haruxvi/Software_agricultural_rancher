@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +26,25 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [s.strip() for s in v.split(",") if s.strip()]
         return v  # type: ignore[return-value]
+
+    @model_validator(mode="after")
+    def _require_production_secrets(self) -> "Settings":
+        if self.environment == "production":
+            missing = [
+                name
+                for name, val in [
+                    ("SUPABASE_JWT_SECRET", self.supabase_jwt_secret),
+                    ("SUPABASE_URL", self.supabase_url),
+                    ("DATABASE_URL", self.database_url),
+                ]
+                if not val
+            ]
+            if missing:
+                raise ValueError(
+                    "Variables de entorno requeridas en producción no configuradas: "
+                    + ", ".join(missing)
+                )
+        return self
 
 
 settings = Settings()
