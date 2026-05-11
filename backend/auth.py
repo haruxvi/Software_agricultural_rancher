@@ -40,14 +40,20 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    decode_kwargs: dict = {
+        "algorithms": ["HS256"],
+        "audience": "authenticated",
+        "options": {"leeway": 30},
+    }
+    if settings.supabase_url:
+        decode_kwargs["issuer"] = f"{settings.supabase_url}/auth/v1"
+
     try:
         payload = jwt.decode(
             credentials.credentials,
             settings.supabase_jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated",
+            **decode_kwargs,
         )
-        return payload
     except JWTError as exc:
         logger.warning("JWT inválido: %s", exc)
         raise HTTPException(
@@ -55,6 +61,14 @@ def get_current_user(
             detail="Token inválido o expirado",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+    if not payload.get("sub"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token sin sub",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return payload
 
 
 def get_user_predio(
