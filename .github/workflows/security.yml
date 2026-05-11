@@ -1,0 +1,63 @@
+name: Security SAST
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  bandit:
+    name: Bandit (HIGH+)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install bandit
+        run: pip install --quiet "bandit[toml]"
+
+      - name: Run bandit
+        run: bandit -r backend/ -c .bandit --severity-level high
+
+  pip-audit:
+    name: pip-audit (CVEs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install pip-audit
+        run: pip install --quiet pip-audit
+
+      - name: Audit dependencies
+        run: pip-audit -r requirements.txt
+
+  semgrep:
+    name: Semgrep (ERROR/HIGH)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install semgrep
+        run: pip install --quiet semgrep
+
+      - name: Run semgrep
+        run: semgrep scan --config auto --severity ERROR --error backend/
+        env:
+          SEMGREP_SEND_METRICS: "off"
