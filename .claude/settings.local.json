@@ -14,7 +14,9 @@
       "Bash(python -m ruff check backend/schemas.py)",
       "Bash(python -m ruff check backend/schemas.py backend/routers/ndvi.py)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\user\\\\Documents\\\\Software_agricultural_rancher\" -Directory)",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "Bash(python -m pytest backend/tests/ -v)",
+      "Bash(venv\\\\Scripts\\\\python.exe -m pytest backend/tests/ -v)"
     ]
   }
 }
