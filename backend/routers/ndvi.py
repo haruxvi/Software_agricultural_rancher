@@ -34,6 +34,7 @@ from backend.services.render import ndvi_to_png, zscore_to_png
 from backend.services.sentinel import download_sentinel2
 from backend.services.timeseries import read_timeseries
 from backend.utils.log_safe import sanitize_for_log
+from backend.utils.paths import safe_data_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ndvi", tags=["ndvi"])
@@ -58,9 +59,7 @@ _MONTH_ES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun",
 
 def _load_predio_bbox(predio_id: str) -> tuple[float, float, float, float]:
     """Devuelve (min_lon, min_lat, max_lon, max_lat) del primer feature del GeoJSON."""
-    geojson_path = PREDIOS_DIR / f"{predio_id}.geojson"
-    if not geojson_path.resolve().is_relative_to(PREDIOS_DIR.resolve()):
-        raise HTTPException(status_code=400, detail="Predio ID inválido")
+    geojson_path = safe_data_path(PREDIOS_DIR, f"{predio_id}.geojson")
     if not geojson_path.exists():
         raise HTTPException(status_code=404, detail=f"Predio '{predio_id}' no encontrado")
 
@@ -80,9 +79,7 @@ def _load_predio_bbox(predio_id: str) -> tuple[float, float, float, float]:
 
 
 def _ndvi_path(predio_id: str, date_from: date, date_to: date) -> Path:
-    path = NDVI_DIR / predio_id / f"{date_from}_{date_to}_NDVI.tif"
-    if not path.resolve().is_relative_to(NDVI_DIR.resolve()):
-        raise HTTPException(status_code=400, detail="Predio ID inválido")
+    path = safe_data_path(NDVI_DIR, predio_id, f"{date_from}_{date_to}_NDVI.tif")
     if not path.exists():
         raise HTTPException(
             status_code=404,
@@ -100,7 +97,7 @@ async def download_predio(request: Request, predio_id: str = Depends(get_user_pr
     """Descarga bandas B04/B08 de Sentinel-2 para el predio indicado."""
     logger.info("download | predio=%s date_from=%s date_to=%s", sanitize_for_log(predio_id), sanitize_for_log(body.date_from), sanitize_for_log(body.date_to))
     bbox = _load_predio_bbox(predio_id)
-    output_path = RAW_DIR / predio_id / f"{body.date_from}_{body.date_to}_B04B08.tif"
+    output_path = safe_data_path(RAW_DIR, predio_id, f"{body.date_from}_{body.date_to}_B04B08.tif")
 
     def _get_dims(p: Path) -> tuple[int, int]:
         with rasterio.open(p) as ds:
@@ -151,7 +148,7 @@ async def download_predio(request: Request, predio_id: str = Depends(get_user_pr
 async def compute_predio_ndvi(request: Request, predio_id: str = Depends(get_user_predio), body: ComputeRequest = ...) -> ComputeResponse:
     """Calcula NDVI desde el GeoTIFF B04/B08 previamente descargado."""
     logger.info("compute | predio=%s date_from=%s date_to=%s", sanitize_for_log(predio_id), sanitize_for_log(body.date_from), sanitize_for_log(body.date_to))
-    input_path = RAW_DIR / predio_id / f"{body.date_from}_{body.date_to}_B04B08.tif"
+    input_path = safe_data_path(RAW_DIR, predio_id, f"{body.date_from}_{body.date_to}_B04B08.tif")
     if not input_path.exists():
         raise HTTPException(
             status_code=404,
@@ -161,7 +158,7 @@ async def compute_predio_ndvi(request: Request, predio_id: str = Depends(get_use
             ),
         )
 
-    output_path = NDVI_DIR / predio_id / f"{body.date_from}_{body.date_to}_NDVI.tif"
+    output_path = safe_data_path(NDVI_DIR, predio_id, f"{body.date_from}_{body.date_to}_NDVI.tif")
 
     if output_path.exists():
         def _read_cached_stats(p: Path) -> NDVIStatsSchema:
@@ -297,9 +294,7 @@ def get_timeseries(predio_id: str = Depends(get_user_predio)) -> TimeseriesRespo
 # ── Anomalías ────────────────────────────────────────────────────────────────
 
 def _zscore_path(predio_id: str, date_from: date, date_to: date) -> Path:
-    path = ANOMALY_DIR / predio_id / f"{date_from}_{date_to}_zscore.tif"
-    if not path.resolve().is_relative_to(ANOMALY_DIR.resolve()):
-        raise HTTPException(status_code=400, detail="Predio ID inválido")
+    path = safe_data_path(ANOMALY_DIR, predio_id, f"{date_from}_{date_to}_zscore.tif")
     if not path.exists():
         raise HTTPException(
             status_code=404,
@@ -316,7 +311,7 @@ def _zscore_path(predio_id: str, date_from: date, date_to: date) -> Path:
 def detect_anomaly(request: Request, predio_id: str = Depends(get_user_predio), body: AnomalyRequest = ...) -> AnomalyResponse:
     """Calcula el z-score NDVI del mes indicado frente al resto de la serie temporal."""
     logger.info("anomaly | predio=%s date_from=%s date_to=%s", sanitize_for_log(predio_id), sanitize_for_log(body.date_from), sanitize_for_log(body.date_to))
-    output_path = ANOMALY_DIR / predio_id / f"{body.date_from}_{body.date_to}_zscore.tif"
+    output_path = safe_data_path(ANOMALY_DIR, predio_id, f"{body.date_from}_{body.date_to}_zscore.tif")
 
     try:
         zscore_path, stats = compute_anomaly(

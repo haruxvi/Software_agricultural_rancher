@@ -10,6 +10,7 @@ import numpy as np
 import rasterio
 
 from backend.utils.log_safe import sanitize_for_log
+from backend.utils.paths import safe_data_path
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ def compute_anomaly(
         ValueError: si hay menos de MIN_BASELINE_MONTHS meses de baseline.
     """
     target_name = f"{target_date_from}_{target_date_to}_NDVI.tif"
-    target_path = predio_ndvi_dir / target_name
+    target_path = safe_data_path(predio_ndvi_dir, target_name)
     if not target_path.exists():
         raise FileNotFoundError(
             f"GeoTIFF objetivo no encontrado: {target_path}. "

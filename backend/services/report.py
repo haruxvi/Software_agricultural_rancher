@@ -17,6 +17,7 @@ from PIL import Image
 from backend.services.render import ndvi_to_png, zscore_to_png
 from backend.services.timeseries import read_timeseries
 from backend.utils.log_safe import sanitize_for_log
+from backend.utils.paths import safe_data_path
 
 logger = logging.getLogger(__name__)
 
@@ -343,7 +344,7 @@ def build_report(
         FileNotFoundError: si el GeoTIFF NDVI del período no existe.
     """
     # Predio info
-    geojson_path = predios_dir / f"{predio_id}.geojson"
+    geojson_path = safe_data_path(predios_dir, f"{predio_id}.geojson")
     predio_info: dict = {}
     if geojson_path.exists():
         with geojson_path.open() as f:
@@ -351,7 +352,7 @@ def build_report(
         predio_info = fc["features"][0]["properties"]
 
     # NDVI
-    ndvi_tif = ndvi_dir / predio_id / f"{date_from}_{date_to}_NDVI.tif"
+    ndvi_tif = safe_data_path(ndvi_dir, predio_id, f"{date_from}_{date_to}_NDVI.tif")
     if not ndvi_tif.exists():
         raise FileNotFoundError(
             f"GeoTIFF NDVI no encontrado para {predio_id} ({date_from} -> {date_to}). "
@@ -384,7 +385,7 @@ def build_report(
     # Anomalía (opcional)
     anomaly_stats: dict | None = None
     anomaly_png: bytes | None = None
-    zscore_tif = anomaly_dir / predio_id / f"{date_from}_{date_to}_zscore.tif"
+    zscore_tif = safe_data_path(anomaly_dir, predio_id, f"{date_from}_{date_to}_zscore.tif")
     if zscore_tif.exists():
         with rasterio.open(zscore_tif) as ds:
             ztags = ds.tags()
