@@ -27,7 +27,7 @@ httpx==0.28.1
 # Visualización / render
 numpy==2.2.5
 matplotlib==3.10.3
-Pillow==11.2.1
+Pillow==12.2.0
 
 # PDF
 fpdf2==2.8.2
