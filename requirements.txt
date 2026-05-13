@@ -4,7 +4,7 @@ uvicorn[standard]==0.34.2
 
 # Geoespacial
 rasterio==1.4.3
-geopandas==1.0.1  # CVE en .to_postgis(); no usamos ese método (grep -rn "to_postgis" backend/ → sin resultados)
+geopandas==1.1.2  # CVE en .to_postgis(); no usamos ese método (grep -rn "to_postgis" backend/ → sin resultados)
 shapely==2.1.0
 
 # Sentinel-2
