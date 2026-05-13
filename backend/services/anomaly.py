@@ -9,6 +9,8 @@ from pathlib import Path
 import numpy as np
 import rasterio
 
+from backend.utils.log_safe import sanitize_for_log
+
 logger = logging.getLogger(__name__)
 
 MIN_BASELINE_MONTHS = 3
@@ -150,6 +152,6 @@ def compute_anomaly(
 
     logger.info(
         "Z-score calculado | baseline=%d meses | estrés=%.1f%% normal=%.1f%% sobre=%.1f%% | %s",
-        stats.baseline_months, stats.pct_stress, stats.pct_normal, stats.pct_above, output_path,
+        stats.baseline_months, stats.pct_stress, stats.pct_normal, stats.pct_above, sanitize_for_log(output_path),
     )
     return output_path, stats

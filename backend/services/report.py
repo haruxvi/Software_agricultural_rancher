@@ -16,6 +16,7 @@ from PIL import Image
 
 from backend.services.render import ndvi_to_png, zscore_to_png
 from backend.services.timeseries import read_timeseries
+from backend.utils.log_safe import sanitize_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -404,7 +405,7 @@ def build_report(
         }
         anomaly_png, _ = zscore_to_png(zscore_tif)
 
-    logger.info("Generando PDF para %s (%s → %s)", predio_id, date_from, date_to)
+    logger.info("Generando PDF para %s (%s → %s)", sanitize_for_log(predio_id), sanitize_for_log(date_from), sanitize_for_log(date_to))
     return generate_pdf(
         predio_id=predio_id,
         predio_info=predio_info,

@@ -8,6 +8,8 @@ from pathlib import Path
 
 import rasterio
 
+from backend.utils.log_safe import sanitize_for_log
+
 logger = logging.getLogger(__name__)
 
 _FNAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})_NDVI\.tif$")
@@ -38,7 +40,7 @@ def read_timeseries(predio_ndvi_dir: Path) -> list[TimeseriesPoint]:
         Lista de TimeseriesPoint ordenada por fecha, vacía si no hay archivos.
     """
     if not predio_ndvi_dir.exists():
-        logger.info("Directorio NDVI no existe: %s", predio_ndvi_dir)
+        logger.info("Directorio NDVI no existe: %s", sanitize_for_log(predio_ndvi_dir))
         return []
 
     points: list[TimeseriesPoint] = []
@@ -78,5 +80,5 @@ def read_timeseries(predio_ndvi_dir: Path) -> list[TimeseriesPoint]:
         )
 
     points.sort(key=lambda p: p.date_from)
-    logger.info("Serie temporal: %d puntos para %s", len(points), predio_ndvi_dir.name)
+    logger.info("Serie temporal: %d puntos para %s", len(points), sanitize_for_log(predio_ndvi_dir.name))
     return points

@@ -33,6 +33,7 @@ from backend.services.ndvi import compute_ndvi
 from backend.services.render import ndvi_to_png, zscore_to_png
 from backend.services.sentinel import download_sentinel2
 from backend.services.timeseries import read_timeseries
+from backend.utils.log_safe import sanitize_for_log
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ndvi", tags=["ndvi"])
@@ -97,7 +98,7 @@ def _ndvi_path(predio_id: str, date_from: date, date_to: date) -> Path:
 @limiter.limit("5/second")
 async def download_predio(request: Request, predio_id: str = Depends(get_user_predio), body: DownloadRequest = ...) -> DownloadResponse:
     """Descarga bandas B04/B08 de Sentinel-2 para el predio indicado."""
-    logger.info("download | predio=%s date_from=%s date_to=%s", predio_id, body.date_from, body.date_to)
+    logger.info("download | predio=%s date_from=%s date_to=%s", sanitize_for_log(predio_id), sanitize_for_log(body.date_from), sanitize_for_log(body.date_to))
     bbox = _load_predio_bbox(predio_id)
     output_path = RAW_DIR / predio_id / f"{body.date_from}_{body.date_to}_B04B08.tif"
 
@@ -127,10 +128,10 @@ async def download_predio(request: Request, predio_id: str = Depends(get_user_pr
             max_cloud_pct=body.max_cloud_pct,
         )
     except ValueError as exc:
-        logger.exception("download ValueError | predio=%s", predio_id)
+        logger.exception("download ValueError | predio=%s", sanitize_for_log(predio_id))
         raise HTTPException(status_code=404, detail=_detail(str(exc), 404)) from exc
     except RuntimeError as exc:
-        logger.exception("download RuntimeError | predio=%s", predio_id)
+        logger.exception("download RuntimeError | predio=%s", sanitize_for_log(predio_id))
         raise HTTPException(status_code=503, detail=_detail(str(exc), 503)) from exc
 
     width, height = await asyncio.to_thread(_get_dims, path)
@@ -149,7 +150,7 @@ async def download_predio(request: Request, predio_id: str = Depends(get_user_pr
 @limiter.limit("5/second")
 async def compute_predio_ndvi(request: Request, predio_id: str = Depends(get_user_predio), body: ComputeRequest = ...) -> ComputeResponse:
     """Calcula NDVI desde el GeoTIFF B04/B08 previamente descargado."""
-    logger.info("compute | predio=%s date_from=%s date_to=%s", predio_id, body.date_from, body.date_to)
+    logger.info("compute | predio=%s date_from=%s date_to=%s", sanitize_for_log(predio_id), sanitize_for_log(body.date_from), sanitize_for_log(body.date_to))
     input_path = RAW_DIR / predio_id / f"{body.date_from}_{body.date_to}_B04B08.tif"
     if not input_path.exists():
         raise HTTPException(
@@ -186,7 +187,7 @@ async def compute_predio_ndvi(request: Request, predio_id: str = Depends(get_use
     try:
         ndvi_path, stats = await asyncio.to_thread(compute_ndvi, input_path, output_path)
     except (ValueError, FileNotFoundError) as exc:
-        logger.exception("compute error | predio=%s", predio_id)
+        logger.exception("compute error | predio=%s", sanitize_for_log(predio_id))
         raise HTTPException(status_code=422, detail=_detail(str(exc), 422)) from exc
 
     return ComputeResponse(
@@ -212,12 +213,12 @@ def get_ndvi_image(
     date_to: date = Query(...),
 ) -> Response:
     """Devuelve el NDVI como PNG RGBA coloreado (RdYlGn) para imageOverlay en Leaflet."""
-    logger.info("image | predio=%s date_from=%s date_to=%s", predio_id, date_from, date_to)
+    logger.info("image | predio=%s date_from=%s date_to=%s", sanitize_for_log(predio_id), sanitize_for_log(date_from), sanitize_for_log(date_to))
     ndvi_tif = _ndvi_path(predio_id, date_from, date_to)
     try:
         png_bytes, _ = ndvi_to_png(ndvi_tif)
     except FileNotFoundError as exc:
-        logger.exception("image FileNotFoundError | predio=%s", predio_id)
+        logger.exception("image FileNotFoundError | predio=%s", sanitize_for_log(predio_id))
         raise HTTPException(status_code=404, detail=_detail(str(exc), 404)) from exc
 
     return Response(
@@ -234,7 +235,7 @@ def get_ndvi_meta(
     date_to: date = Query(...),
 ) -> NDVIMetaResponse:
     """Devuelve bounds (formato Leaflet) y estadísticas del NDVI calculado."""
-    logger.info("meta | predio=%s date_from=%s date_to=%s", predio_id, date_from, date_to)
+    logger.info("meta | predio=%s date_from=%s date_to=%s", sanitize_for_log(predio_id), sanitize_for_log(date_from), sanitize_for_log(date_to))
     ndvi_tif = _ndvi_path(predio_id, date_from, date_to)
 
     with rasterio.open(ndvi_tif) as ds:
@@ -265,7 +266,7 @@ def get_ndvi_meta(
 @router.get("/predios/{predio_id}/timeseries", response_model=TimeseriesResponse)
 def get_timeseries(predio_id: str = Depends(get_user_predio)) -> TimeseriesResponse:
     """Devuelve la serie temporal NDVI de todos los meses calculados para el predio."""
-    logger.info("timeseries | predio=%s", predio_id)
+    logger.info("timeseries | predio=%s", sanitize_for_log(predio_id))
     predio_ndvi_dir = NDVI_DIR / predio_id
     raw_points = read_timeseries(predio_ndvi_dir)
 
@@ -314,7 +315,7 @@ def _zscore_path(predio_id: str, date_from: date, date_to: date) -> Path:
 @limiter.limit("5/second")
 def detect_anomaly(request: Request, predio_id: str = Depends(get_user_predio), body: AnomalyRequest = ...) -> AnomalyResponse:
     """Calcula el z-score NDVI del mes indicado frente al resto de la serie temporal."""
-    logger.info("anomaly | predio=%s date_from=%s date_to=%s", predio_id, body.date_from, body.date_to)
+    logger.info("anomaly | predio=%s date_from=%s date_to=%s", sanitize_for_log(predio_id), sanitize_for_log(body.date_from), sanitize_for_log(body.date_to))
     output_path = ANOMALY_DIR / predio_id / f"{body.date_from}_{body.date_to}_zscore.tif"
 
     try:
@@ -326,10 +327,10 @@ def detect_anomaly(request: Request, predio_id: str = Depends(get_user_predio), 
             threshold=body.threshold,
         )
     except FileNotFoundError as exc:
-        logger.exception("anomaly FileNotFoundError | predio=%s", predio_id)
+        logger.exception("anomaly FileNotFoundError | predio=%s", sanitize_for_log(predio_id))
         raise HTTPException(status_code=404, detail=_detail(str(exc), 404)) from exc
     except ValueError as exc:
-        logger.exception("anomaly ValueError | predio=%s", predio_id)
+        logger.exception("anomaly ValueError | predio=%s", sanitize_for_log(predio_id))
         raise HTTPException(status_code=422, detail=_detail(str(exc), 422)) from exc
 
     def _or_none(v: float) -> float | None:
@@ -360,12 +361,12 @@ def get_anomaly_image(
     date_to: date = Query(...),
 ) -> Response:
     """Devuelve el mapa de z-score como PNG RGBA (RdBu) para imageOverlay en Leaflet."""
-    logger.info("anomaly/image | predio=%s date_from=%s date_to=%s", predio_id, date_from, date_to)
+    logger.info("anomaly/image | predio=%s date_from=%s date_to=%s", sanitize_for_log(predio_id), sanitize_for_log(date_from), sanitize_for_log(date_to))
     zpath = _zscore_path(predio_id, date_from, date_to)
     try:
         png_bytes, _ = zscore_to_png(zpath)
     except FileNotFoundError as exc:
-        logger.exception("anomaly/image FileNotFoundError | predio=%s", predio_id)
+        logger.exception("anomaly/image FileNotFoundError | predio=%s", sanitize_for_log(predio_id))
         raise HTTPException(status_code=404, detail=_detail(str(exc), 404)) from exc
     return Response(
         content=png_bytes,
@@ -381,7 +382,7 @@ def get_anomaly_meta(
     date_to: date = Query(...),
 ) -> AnomalyMetaResponse:
     """Devuelve bounds y estadísticas del z-score calculado."""
-    logger.info("anomaly/meta | predio=%s date_from=%s date_to=%s", predio_id, date_from, date_to)
+    logger.info("anomaly/meta | predio=%s date_from=%s date_to=%s", sanitize_for_log(predio_id), sanitize_for_log(date_from), sanitize_for_log(date_to))
     zpath = _zscore_path(predio_id, date_from, date_to)
 
     with rasterio.open(zpath) as ds:
