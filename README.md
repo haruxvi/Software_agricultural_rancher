@@ -1,4 +1,4 @@
-# AgroVista
+# AgroVista (MVP)
 
 Plataforma SaaS de monitoreo satelital para predios agrícolas en Chile.
 NDVI sobre Sentinel-2 + alertas por anomalía + reporte PDF — MVP para viñas en Colchagua/Curicó.
