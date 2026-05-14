@@ -1,7 +1,7 @@
 # AgroVista (MVP)
 
 Plataforma SaaS de monitoreo satelital para predios agrícolas en Chile.
-NDVI sobre Sentinel-2 + alertas por anomalía + reporte PDF — MVP para viñas en Colchagua/Curicó.
+NDVI sobre Sentinel-2 + alertas por anomalía + reporte PDF — MVP para viñas en Colchagua/Curicó. Este es solo un MVP o llamese maqueta de un proyecto mucho más ambicioso.
 
 [![CodeQL](https://github.com/haruxvi/Software_agricultural_rancher/actions/workflows/codeql.yml/badge.svg)](https://github.com/haruxvi/Software_agricultural_rancher/actions/workflows/codeql.yml)
 [![Security SAST](https://github.com/haruxvi/Software_agricultural_rancher/actions/workflows/security.yml/badge.svg)](https://github.com/haruxvi/Software_agricultural_rancher/actions/workflows/security.yml)
